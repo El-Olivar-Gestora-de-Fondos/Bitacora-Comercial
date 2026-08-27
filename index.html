@@ -334,6 +334,7 @@
 
 <div class="wrap" id="root"><div class="loading">Cargando bitácora…</div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 (function(){
 'use strict';
@@ -2222,6 +2223,46 @@ function asesorSelectHtml(p, asesoresUnicos){
     return '<option value="'+escapeHtml(a)+'" '+(a===p.asesor?'selected':'')+'>'+escapeHtml(a)+'</option>';
   }).join('')+'</select>';
 }
+function prospectoFunnelRow(p){
+  var citas = citasDeProspecto(p.id).slice().sort(function(a,b){ return new Date(b.creadoEn||0) - new Date(a.creadoEn||0); });
+  var ultima = citas[0] || null;
+  var etapa = ultima ? stageLabel(ultima.etapa) : 'Sin cita agendada';
+  var monto = (ultima && ultima.etapa==='emitida' && typeof ultima.monto==='number') ? ultima.monto : '';
+  return {
+    'Asesor': p.asesor || '',
+    'Nombres': p.clienteNombres || '',
+    'Apellidos': p.clienteApellidos || '',
+    'Teléfono': p.telefono || '',
+    'Correo': p.correo || '',
+    'Tipo de documento': p.tipoDocumento || '',
+    'N° de documento': p.numeroDocumento || '',
+    'Producto': p.producto === 'Bono Corporativo' ? 'Bono Corporativo' : 'Fondo de Inversión',
+    'Etapa del funnel': etapa,
+    'Citas registradas': citas.length,
+    'Fecha última cita': ultima ? (ultima.fecha || '') : '',
+    'Hora última cita': ultima ? (ultima.hora || '') : '',
+    'Monto emitido': monto,
+    'Notas': p.notas || '',
+    'Creado': (p.creadoEn || '').slice(0, 10)
+  };
+}
+function exportProspectosExcel(){
+  if(typeof XLSX === 'undefined'){
+    alert('No se pudo cargar el módulo de Excel (revisa tu conexión a internet) — vuelve a intentarlo en unos segundos.');
+    return;
+  }
+  var prospectos = visibleProspectos();
+  if(!prospectos.length){ alert('No hay prospectos para exportar.'); return; }
+  var rows = prospectos.map(prospectoFunnelRow);
+  var ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    {wch:18},{wch:16},{wch:16},{wch:14},{wch:24},{wch:16},{wch:16},
+    {wch:18},{wch:20},{wch:10},{wch:14},{wch:10},{wch:12},{wch:30},{wch:12}
+  ];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Prospectos');
+  XLSX.writeFile(wb, 'prospectos_funnel_'+todayStr()+'.xlsx');
+}
 function renderProspectoForm(asesoresUnicos){
   var prospectos = visibleProspectos();
   var colspan = isAdmin() ? 8 : 6;
@@ -2291,7 +2332,9 @@ function renderProspectoForm(asesoresUnicos){
     '<div class="report-card">'+
       '<h2>Prospectos (<span id="prospecto-count">'+prospectos.length+'</span>)</h2>'+
       (prospectos.length ? (
-        '<div class="filters"><input type="text" id="prospecto-search" placeholder="Buscar por nombre, teléfono, correo o asesor…" value="'+escapeHtml(prospectoSearch)+'"></div>'+
+        '<div class="filters"><input type="text" id="prospecto-search" placeholder="Buscar por nombre, teléfono, correo o asesor…" value="'+escapeHtml(prospectoSearch)+'">'+
+          '<button type="button" class="btn" id="prospecto-export-excel" style="margin-left:auto;">Exportar a Excel</button>'+
+        '</div>'+
         (isAdmin() ? (
           '<div class="filters" style="margin-top:0;">'+
             '<label style="font-size:11px;color:var(--ink-soft);align-self:center;">Reasignar seleccionados a</label>'+
@@ -2435,6 +2478,8 @@ function wireProspectoFormEvents(asesoresUnicos){
   }
   var pSearch = document.getElementById('prospecto-search');
   if(pSearch) pSearch.oninput = function(e){ prospectoSearch = e.target.value; applyProspectoSearchFilter(); };
+  var pExport = document.getElementById('prospecto-export-excel');
+  if(pExport) pExport.onclick = exportProspectosExcel;
   applyProspectoSearchFilter();
 }
 function applyProspectoSearchFilter(){
