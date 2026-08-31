@@ -1322,7 +1322,6 @@ function render(){
   if(needsProfile){ renderCompleteProfile(); return; }
   var asesoresUnicos = uniqueAsesores();
   if(!currentUser){ renderGate(); return; }
-  if(!isAdmin() && view === 'importar') view = 'agenda';
 
   var today = todayStr();
   var todayOps = state.oportunidades.filter(function(c){ return c.fecha === today; });
@@ -1339,7 +1338,7 @@ function render(){
     {k:'prospectos', l:'Nuevo prospecto'},
     {k:'agendar', l:'Agendar cita'}
   ];
-  if(isAdmin()) navItems.push({k:'importar', l:'Importar / Equipo'});
+  navItems.push({k:'importar', l: isAdmin() ? 'Importar / Equipo' : 'Importar prospectos'});
 
   root.innerHTML =
     '<header>'+
@@ -1360,12 +1359,14 @@ function render(){
       '<nav>'+navItems.map(function(n){ return '<button data-nav="'+n.k+'" class="'+(view===n.k?'active':'')+'">'+n.l+'</button>'; }).join('')+'</nav>'+
     '</header>'+
     banner+
-    '<div class="stats" id="app-stats">'+
-      '<div class="stat"><div class="n">'+todayOps.length+'</div><div class="l">Reuniones hoy</div></div>'+
-      '<div class="stat alt"><div class="n">'+enFunnel+'</div><div class="l">En funnel activo</div></div>'+
-      '<div class="stat alt"><div class="n">'+emitidasMes+'</div><div class="l">Emitidas este mes</div></div>'+
-      '<div class="stat alt"><div class="n">'+perdidas+'</div><div class="l">Perdidas (total)</div></div>'+
-    '</div>'+
+    (isAdmin() ? (
+      '<div class="stats" id="app-stats">'+
+        '<div class="stat"><div class="n">'+todayOps.length+'</div><div class="l">Reuniones hoy</div></div>'+
+        '<div class="stat alt"><div class="n">'+enFunnel+'</div><div class="l">En funnel activo</div></div>'+
+        '<div class="stat alt"><div class="n">'+emitidasMes+'</div><div class="l">Emitidas este mes</div></div>'+
+        '<div class="stat alt"><div class="n">'+perdidas+'</div><div class="l">Perdidas (total)</div></div>'+
+      '</div>'
+    ) : '')+
     '<div id="view-container"></div>';
 
   document.querySelectorAll('[data-nav]').forEach(function(b){
@@ -1386,7 +1387,10 @@ function render(){
   if(view === 'agenda'){ vc.innerHTML = renderAgenda(asesoresUnicos); wireAgendaEvents(); }
   else if(view === 'funnel'){ vc.innerHTML = renderFunnel(asesoresUnicos); wireFunnelEvents(); }
   else if(view === 'reporte'){ vc.innerHTML = renderReporte(asesoresUnicos); wireReporteEvents(asesoresUnicos); }
-  else if(view === 'importar' && isAdmin()){ vc.innerHTML = renderImportar(asesoresUnicos); wireImportarEvents(asesoresUnicos); }
+  else if(view === 'importar'){
+    if(isAdmin()){ vc.innerHTML = renderImportar(asesoresUnicos); wireImportarEvents(asesoresUnicos); }
+    else { vc.innerHTML = renderImportarProspectosAsesor(); wireImportarProspectosAsesorEvents(); }
+  }
   else if(view === 'agendar'){ vc.innerHTML = renderAgendarForm(asesoresUnicos); wireAgendarFormEvents(); }
   else { vc.innerHTML = renderProspectoForm(asesoresUnicos); wireProspectoFormEvents(asesoresUnicos); }
 
@@ -2377,6 +2381,17 @@ function aplicarReasignacionMasiva(nuevoAsesor){
   prospectoSeleccionados = {};
   render();
 }
+function eliminarProspectosConCitas(ids){
+  var citaIds = [];
+  ids.forEach(function(id){ citasDeProspecto(id).forEach(function(c){ citaIds.push(c.id); }); });
+  mutate(function(s){
+    s.prospectos = s.prospectos.filter(function(p){ return ids.indexOf(p.id) === -1; });
+    s.oportunidades = s.oportunidades.filter(function(o){ return citaIds.indexOf(o.id) === -1; });
+  });
+  ids.forEach(function(id){ supaDelete('prospectos', id); });
+  citaIds.forEach(function(id){ supaDelete('oportunidades', id); });
+  return citaIds.length;
+}
 function eliminarProspectosSeleccionados(){
   if(!isAdmin()) return;
   var ids = Object.keys(prospectoSeleccionados).filter(function(id){ return prospectoSeleccionados[id]; });
@@ -2384,10 +2399,10 @@ function eliminarProspectosSeleccionados(){
   var citasTotal = 0;
   ids.forEach(function(id){ citasTotal += citasDeProspecto(id).length; });
   var msg = '¿Eliminar '+ids.length+' prospecto(s) seleccionado(s)?'+
-    (citasTotal ? ' Tienen '+citasTotal+' cita(s) registradas en total; esas citas no se eliminan, pero quedarán sin prospecto vinculado.' : '');
+    (citasTotal ? ' Se eliminarán también sus '+citasTotal+' cita(s) registradas en total.' : '')+
+    ' Esta acción no se puede deshacer.';
   if(!confirm(msg)) return;
-  mutate(function(s){ s.prospectos = s.prospectos.filter(function(p){ return ids.indexOf(p.id) === -1; }); });
-  ids.forEach(function(id){ supaDelete('prospectos', id); });
+  eliminarProspectosConCitas(ids);
   prospectoSeleccionados = {};
   render();
 }
@@ -2447,11 +2462,10 @@ function wireProspectoFormEvents(asesoresUnicos){
       if(!p) return;
       var citas = citasDeProspecto(id).length;
       var msg = citas
-        ? '¿Eliminar este prospecto? Ya tiene '+citas+' cita(s) registradas; esas citas no se eliminan, pero quedarán sin prospecto vinculado.'
+        ? '¿Eliminar este prospecto y su(s) '+citas+' cita(s) registradas? Esta acción no se puede deshacer.'
         : '¿Eliminar este prospecto?';
       if(!confirm(msg)) return;
-      mutate(function(s){ s.prospectos = s.prospectos.filter(function(x){ return x.id !== id; }); });
-      supaDelete('prospectos', id);
+      eliminarProspectosConCitas([id]);
     };
   });
   if(isAdmin()){
@@ -2820,19 +2834,12 @@ function parseAsesoresCSV(text){
   });
   return out;
 }
-function wireImportarEvents(asesoresUnicos){
+function wireLeadsImportEvents(){
   var tplLeads = document.getElementById('tpl-leads');
-  var tplAsesores = document.getElementById('tpl-asesores');
   if(tplLeads) tplLeads.onclick = function(){
     downloadTextFile('plantilla_leads.csv', toCSV(
       ['Asesor','Nombres','Apellidos','Telefono','Correo','TipoDocumento','NumeroDocumento','Producto','Fecha','Hora','Modalidad','Lugar','Enlace','Notas'],
-      [['Juana Pérez','María','Gómez','+51 999 999 999','maria.gomez@correo.com','DNI','12345678','Bono Corporativo','2026-09-01','10:00','Presencial','Oficina San Isidro','','Cliente referido']]
-    ));
-  };
-  if(tplAsesores) tplAsesores.onclick = function(){
-    downloadTextFile('plantilla_asesores.csv', toCSV(
-      ['Nombre','Correo','Telefono'],
-      [['Juana Pérez','juana.perez@correo.com','+51 999 999 999'],['Carlos Ruiz','carlos.ruiz@correo.com','']]
+      [[isAdmin() ? 'Juana Pérez' : currentUser.nombre,'María','Gómez','+51 999 999 999','maria.gomez@correo.com','DNI','12345678','Bono Corporativo','2026-09-01','10:00','Presencial','Oficina San Isidro','','Cliente referido']]
     ));
   };
   var fileLeads = document.getElementById('file-leads');
@@ -2841,18 +2848,21 @@ function wireImportarEvents(asesoresUnicos){
     if(!f) return;
     var reader = new FileReader();
     reader.onload = function(){
-      leadsPreview = { rows: parseLeadsCSV(String(reader.result)) };
-      render();
-    };
-    reader.readAsText(f);
-  };
-  var fileAsesores = document.getElementById('file-asesores');
-  if(fileAsesores) fileAsesores.onchange = function(){
-    var f = fileAsesores.files && fileAsesores.files[0];
-    if(!f) return;
-    var reader = new FileReader();
-    reader.onload = function(){
-      asesoresPreview = { rows: parseAsesoresCSV(String(reader.result)) };
+      var rows = parseLeadsCSV(String(reader.result));
+      if(!isAdmin()){
+        // Un asesor solo puede cargar prospectos propios: se ignora lo que
+        // traiga la columna "Asesor" y se fuerza a su nombre, para que
+        // coincida con las políticas de acceso de la base de datos.
+        rows.forEach(function(r){
+          r.asesor = currentUser.nombre;
+          if(!r.clienteNombres || !r.clienteApellidos || !r.telefono){
+            r.error = 'Faltan datos obligatorios (nombres, apellidos o teléfono)';
+          } else {
+            delete r.error;
+          }
+        });
+      }
+      leadsPreview = { rows: rows };
       render();
     };
     reader.readAsText(f);
@@ -2896,6 +2906,44 @@ function wireImportarEvents(asesoresUnicos){
     }
     leadsPreview = null;
     render();
+  };
+}
+function renderImportarProspectosAsesor(){
+  var leadsPreviewHtml = leadsPreview ? renderLeadsPreview() : '';
+  return (
+    '<div class="report-card">'+
+      '<h2>Importar mis prospectos (CSV)</h2>'+
+      '<div class="sub" style="margin-bottom:10px;">Columnas reconocidas (en cualquier orden): Asesor, Nombres, Apellidos, Teléfono, Correo, Tipo de documento, N.º de documento, Producto, Fecha, Hora, Modalidad, Lugar, Enlace, Notas. Nombres, Apellidos y Teléfono son obligatorios; el resto queda vacío si no se incluye y se puede completar después desde el funnel. Todas las filas se importan a tu nombre ('+escapeHtml(currentUser.nombre)+'), sin importar lo que traiga la columna Asesor. Cada fila crea a la vez el prospecto y su cita ya agendada (a diferencia de la carga manual, que separa ambos pasos).</div>'+
+      '<div class="filters">'+
+        '<button class="btn" id="tpl-leads">Descargar plantilla CSV</button>'+
+        '<input type="file" id="file-leads" accept=".csv,text/csv">'+
+      '</div>'+
+      leadsPreviewHtml+
+    '</div>'
+  );
+}
+function wireImportarProspectosAsesorEvents(){
+  wireLeadsImportEvents();
+}
+function wireImportarEvents(asesoresUnicos){
+  wireLeadsImportEvents();
+  var tplAsesores = document.getElementById('tpl-asesores');
+  if(tplAsesores) tplAsesores.onclick = function(){
+    downloadTextFile('plantilla_asesores.csv', toCSV(
+      ['Nombre','Correo','Telefono'],
+      [['Juana Pérez','juana.perez@correo.com','+51 999 999 999'],['Carlos Ruiz','carlos.ruiz@correo.com','']]
+    ));
+  };
+  var fileAsesores = document.getElementById('file-asesores');
+  if(fileAsesores) fileAsesores.onchange = function(){
+    var f = fileAsesores.files && fileAsesores.files[0];
+    if(!f) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      asesoresPreview = { rows: parseAsesoresCSV(String(reader.result)) };
+      render();
+    };
+    reader.readAsText(f);
   };
   var asesoresCancel = document.getElementById('asesores-cancel');
   if(asesoresCancel) asesoresCancel.onclick = function(){ asesoresPreview=null; render(); };
