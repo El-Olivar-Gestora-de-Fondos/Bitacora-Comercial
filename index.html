@@ -1323,12 +1323,6 @@ function render(){
   var asesoresUnicos = uniqueAsesores();
   if(!currentUser){ renderGate(); return; }
 
-  var today = todayStr();
-  var todayOps = state.oportunidades.filter(function(c){ return c.fecha === today; });
-  var enFunnel = state.oportunidades.filter(function(c){ return c.etapa !== 'perdida' && c.etapa !== 'emitida'; }).length;
-  var emitidasMes = filterByMonthEmitida(state.oportunidades, monthStr(new Date())).length;
-  var perdidas = state.oportunidades.filter(function(c){ return c.etapa==='perdida'; }).length;
-
   var banner = '';
 
   var navItems = [
@@ -1359,14 +1353,6 @@ function render(){
       '<nav>'+navItems.map(function(n){ return '<button data-nav="'+n.k+'" class="'+(view===n.k?'active':'')+'">'+n.l+'</button>'; }).join('')+'</nav>'+
     '</header>'+
     banner+
-    (isAdmin() ? (
-      '<div class="stats" id="app-stats">'+
-        '<div class="stat"><div class="n">'+todayOps.length+'</div><div class="l">Reuniones hoy</div></div>'+
-        '<div class="stat alt"><div class="n">'+enFunnel+'</div><div class="l">En funnel activo</div></div>'+
-        '<div class="stat alt"><div class="n">'+emitidasMes+'</div><div class="l">Emitidas este mes</div></div>'+
-        '<div class="stat alt"><div class="n">'+perdidas+'</div><div class="l">Perdidas (total)</div></div>'+
-      '</div>'
-    ) : '')+
     '<div id="view-container"></div>';
 
   document.querySelectorAll('[data-nav]').forEach(function(b){
@@ -1755,6 +1741,19 @@ function wireDragAndDrop(){
 }
 
 // ================= RENDER: Reporte =================
+function appStatsHtml(){
+  var today = todayStr();
+  var todayOps = state.oportunidades.filter(function(c){ return c.fecha === today; });
+  var enFunnel = state.oportunidades.filter(function(c){ return c.etapa !== 'perdida' && c.etapa !== 'emitida'; }).length;
+  var emitidasMes = filterByMonthEmitida(state.oportunidades, monthStr(new Date())).length;
+  var perdidas = state.oportunidades.filter(function(c){ return c.etapa==='perdida'; }).length;
+  return '<div class="stats" id="app-stats">'+
+    '<div class="stat"><div class="n">'+todayOps.length+'</div><div class="l">Reuniones hoy</div></div>'+
+    '<div class="stat alt"><div class="n">'+enFunnel+'</div><div class="l">En funnel activo</div></div>'+
+    '<div class="stat alt"><div class="n">'+emitidasMes+'</div><div class="l">Emitidas este mes</div></div>'+
+    '<div class="stat alt"><div class="n">'+perdidas+'</div><div class="l">Perdidas (total)</div></div>'+
+  '</div>';
+}
 function renderReporte(asesoresUnicos){
   var admin = isAdmin();
   if(!admin) reportAsesor = currentUser.nombre;
@@ -1775,6 +1774,7 @@ function renderReporte(asesoresUnicos){
        '<label style="font-size:11px;color:var(--ink-soft);align-self:center;">Hasta</label>'+
        '<input type="month" id="rep-hasta" value="'+reportHasta+'">');
   var controls =
+    (admin ? appStatsHtml() : '')+
     '<div class="filters">'+
       modeToggle+
       periodoControls+
@@ -2296,8 +2296,7 @@ function renderProspectoForm(asesoresUnicos){
             (prospectoErrors.asesor ? '<div class="err">'+prospectoErrors.asesor+'</div>' : '')+
           '</div>'+
           '<div class="field"><label for="p-producto">Producto de interés</label>'+
-            '<select id="p-producto"><option '+(prospectoForm.producto==='Bono Corporativo'?'selected':'')+'>Bono Corporativo</option>'+
-            '<option '+(prospectoForm.producto==='Fondo de Inversión'?'selected':'')+'>Fondo de Inversión</option></select>'+
+            '<select id="p-producto"><option selected>Bono Corporativo</option></select>'+
           '</div>'+
         '</div>'+
         '<div class="grid2">'+
@@ -2784,8 +2783,8 @@ function parseLeadsCSV(text){
     var correo = hasAsesorCol ? get('correo') : (r[4]||'').trim();
     var tipoDocumento = hasAsesorCol ? get('tipoDocumento') : (r[5]||'').trim();
     var numeroDocumento = hasAsesorCol ? get('numeroDocumento') : (r[6]||'').trim();
-    var productoRaw = normHeader(hasAsesorCol ? get('producto') : (r[7]||''));
-    var producto = productoRaw.indexOf('fondo') !== -1 ? 'Fondo de Inversión' : 'Bono Corporativo';
+    // Por ahora solo se ofrece Bono Corporativo; se ignora lo que traiga la columna Producto.
+    var producto = 'Bono Corporativo';
     var modalidadRaw = normHeader(hasAsesorCol ? get('modalidad') : (r[10]||''));
     var modalidad = modalidadRaw.indexOf('virtual') !== -1 ? 'Virtual' : 'Presencial';
     var item = {
