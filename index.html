@@ -1017,7 +1017,16 @@ function renderReminders(){
 }
 
 // ---------- CSV helpers ----------
-function parseCSV(text){
+function detectCSVDelimiter(text){
+  // Excel exportado con configuración regional en español suele usar ";" en
+  // vez de "," como separador de columnas. Nos quedamos con el que aparezca
+  // más veces en el archivo.
+  var commas = (text.match(/,/g)||[]).length;
+  var semicolons = (text.match(/;/g)||[]).length;
+  return semicolons > commas ? ';' : ',';
+}
+function parseCSV(text, delimiter){
+  delimiter = delimiter || ',';
   var rows = []; var row = []; var field=''; var inQuotes=false;
   for(var i=0;i<text.length;i++){
     var c = text[i];
@@ -1027,7 +1036,7 @@ function parseCSV(text){
       } else { field += c; }
     } else {
       if(c === '"'){ inQuotes = true; }
-      else if(c === ','){ row.push(field); field=''; }
+      else if(c === delimiter){ row.push(field); field=''; }
       else if(c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
       else if(c === '\r'){ /* skip */ }
       else { field += c; }
@@ -1061,6 +1070,26 @@ async function downloadTextFile(filename, content){
     copyModal = {filename: filename, content: content};
     render();
   }
+}
+function readTextFileSmart(file, callback){
+  // Muchos CSV exportados desde Excel en español no quedan en UTF-8 (quedan
+  // en Windows-1252/ANSI). Leído como UTF-8 eso produce el carácter de
+  // reemplazo "�" en las letras con tilde o ñ. Si lo detectamos, volvemos a
+  // leer el mismo archivo como Windows-1252.
+  var reader = new FileReader();
+  reader.onload = function(){
+    var text = String(reader.result);
+    if(text.indexOf('�') !== -1){
+      var reader2 = new FileReader();
+      reader2.onload = function(){ callback(String(reader2.result)); };
+      reader2.onerror = function(){ callback(text); };
+      reader2.readAsText(file, 'windows-1252');
+    } else {
+      callback(text);
+    }
+  };
+  reader.onerror = function(){ callback(''); };
+  reader.readAsText(file);
 }
 
 // ---------- notificaciones ----------
@@ -2769,7 +2798,7 @@ function buildAliasHeaderMap(headerRow, aliases){
 }
 function buildHeaderMap(headerRow){ return buildAliasHeaderMap(headerRow, LEAD_ALIASES); }
 function parseLeadsCSV(text){
-  var rows = parseCSV(text);
+  var rows = parseCSV(text, detectCSVDelimiter(text));
   if(rows.length===0) return [];
   var map = buildHeaderMap(rows[0]);
   var hasAsesorCol = map.asesor !== undefined;
@@ -2807,7 +2836,7 @@ function parseLeadsCSV(text){
   });
 }
 function parseAsesoresCSV(text){
-  var rows = parseCSV(text);
+  var rows = parseCSV(text, detectCSVDelimiter(text));
   if(rows.length===0) return [];
   var map = buildAliasHeaderMap(rows[0], ASESOR_ALIASES);
   var hasHeader = map.nombre !== undefined || map.correo !== undefined;
@@ -2845,9 +2874,8 @@ function wireLeadsImportEvents(){
   if(fileLeads) fileLeads.onchange = function(){
     var f = fileLeads.files && fileLeads.files[0];
     if(!f) return;
-    var reader = new FileReader();
-    reader.onload = function(){
-      var rows = parseLeadsCSV(String(reader.result));
+    readTextFileSmart(f, function(text){
+      var rows = parseLeadsCSV(text);
       if(!isAdmin()){
         // Un asesor solo puede cargar prospectos propios: se ignora lo que
         // traiga la columna "Asesor" y se fuerza a su nombre, para que
@@ -2863,8 +2891,7 @@ function wireLeadsImportEvents(){
       }
       leadsPreview = { rows: rows };
       render();
-    };
-    reader.readAsText(f);
+    });
   };
   var leadsCancel = document.getElementById('leads-cancel');
   if(leadsCancel) leadsCancel.onclick = function(){ leadsPreview=null; render(); };
@@ -2937,12 +2964,10 @@ function wireImportarEvents(asesoresUnicos){
   if(fileAsesores) fileAsesores.onchange = function(){
     var f = fileAsesores.files && fileAsesores.files[0];
     if(!f) return;
-    var reader = new FileReader();
-    reader.onload = function(){
-      asesoresPreview = { rows: parseAsesoresCSV(String(reader.result)) };
+    readTextFileSmart(f, function(text){
+      asesoresPreview = { rows: parseAsesoresCSV(text) };
       render();
-    };
-    reader.readAsText(f);
+    });
   };
   var asesoresCancel = document.getElementById('asesores-cancel');
   if(asesoresCancel) asesoresCancel.onclick = function(){ asesoresPreview=null; render(); };
