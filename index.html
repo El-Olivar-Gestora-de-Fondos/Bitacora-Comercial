@@ -396,6 +396,7 @@ var passwordModal = null; // {error:''} when open
 var view = 'agenda';
 var filterAsesor = 'todos';
 var filterFecha = todayStr();
+var agendaViewMode = 'dia'; // 'dia' | 'semana'
 var kanbanAsesor = 'todos';
 var kanbanProducto = 'todos';
 var reportDesde = monthStr(new Date());
@@ -440,6 +441,16 @@ function todayStr(){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function monthStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function isoFromDateObj(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function weekRangeFor(fechaStr){
+  // Semana de lunes a domingo que contiene fechaStr.
+  var d = new Date((fechaStr||todayStr())+'T00:00:00');
+  var dow = d.getDay(); // 0=domingo .. 6=sabado
+  var diffToMonday = (dow===0) ? -6 : (1-dow);
+  var monday = new Date(d); monday.setDate(d.getDate()+diffToMonday);
+  var sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+  return { desde: isoFromDateObj(monday), hasta: isoFromDateObj(sunday) };
+}
 function nowISO(){ return new Date().toISOString(); }
 function uid(){ return 'o'+Date.now()+Math.random().toString(36).slice(2,8); }
 function escapeHtml(s){
@@ -1636,42 +1647,71 @@ function wireCommonOpEvents(){
 }
 
 // ================= RENDER: Agenda =================
-function renderResumenDia(filtered){
+function renderResumenDia(filtered, esSemana){
   if(!filtered.length) return '';
   var rows = filtered.map(function(c){
     return '<tr><td>'+escapeHtml(c.asesor)+'</td><td>'+escapeHtml(c.clienteNombres)+' '+escapeHtml(c.clienteApellidos)+'</td>'+
+      (esSemana ? '<td>'+fmtFecha(c.fecha)+'</td>' : '')+
       '<td>'+(c.hora?escapeHtml(c.hora):'—')+'</td><td>'+(c.modalidad==='Virtual'?'Virtual':'Presencial')+'</td>'+
       '<td><span class="badge '+stageClass(c.etapa)+'">'+stageLabel(c.etapa)+'</span></td></tr>';
   }).join('');
-  return '<div class="report-card"><h2>Resumen del día</h2><div class="scroll-x"><table class="team-table"><thead><tr>'+
-    '<th>Asesor</th><th>Cliente</th><th>Hora</th><th>Modalidad</th><th>Etapa</th>'+
+  return '<div class="report-card"><h2>Resumen de '+(esSemana?'la semana':'del día')+'</h2><div class="scroll-x"><table class="team-table"><thead><tr>'+
+    '<th>Asesor</th><th>Cliente</th>'+(esSemana?'<th>Fecha</th>':'')+'<th>Hora</th><th>Modalidad</th><th>Etapa</th>'+
     '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
 }
 function renderAgenda(asesoresUnicos){
   var remindersHtml = renderReminders();
-  var filtered = state.oportunidades.filter(function(c){ return c.fecha === filterFecha; });
+  var esSemana = agendaViewMode === 'semana';
+  var rango = esSemana ? weekRangeFor(filterFecha) : {desde:filterFecha, hasta:filterFecha};
+  var filtered = state.oportunidades.filter(function(c){ return c.fecha && c.fecha >= rango.desde && c.fecha <= rango.hasta; });
   if(filterAsesor !== 'todos') filtered = filtered.filter(function(c){ return c.asesor === filterAsesor; });
-  filtered.sort(function(a,b){ return (a.hora||'').localeCompare(b.hora||''); });
-  var resumenHtml = isAdmin() ? renderResumenDia(filtered) : '';
+  filtered.sort(function(a,b){ return (a.fecha||'').localeCompare(b.fecha||'') || (a.hora||'').localeCompare(b.hora||''); });
+  var resumenHtml = isAdmin() ? renderResumenDia(filtered, esSemana) : '';
+  var filterHtml =
+    '<div class="filters">'+
+      '<div class="view-toggle">'+
+        '<button id="ag-mode-dia" class="'+(!esSemana?'active':'')+'">Día</button>'+
+        '<button id="ag-mode-semana" class="'+(esSemana?'active':'')+'">Semana</button>'+
+      '</div>'+
+      '<input type="date" id="f-fecha" value="'+filterFecha+'">'+
+      '<button class="today-btn" id="f-today">Hoy</button>'+
+      (isAdmin() ? '<select id="f-asesor"><option value="todos" '+(filterAsesor==='todos'?'selected':'')+'>Todos los asesores</option>'+
+        asesoresUnicos.map(function(a){ return '<option value="'+escapeHtml(a)+'" '+(filterAsesor===a?'selected':'')+'>'+escapeHtml(a)+'</option>'; }).join('')+'</select>' : '')+
+      '<button class="btn" id="f-export" style="margin-left:auto;">Exportar '+(esSemana?'semana':'día')+' a CSV</button>'+
+    '</div>'+
+    (esSemana ? '<div class="sub" style="margin:-4px 0 12px;">Semana del '+fmtFecha(rango.desde)+' al '+fmtFecha(rango.hasta)+'.</div>' : '');
+  if(filtered.length===0){
+    var vacioMsg = esSemana
+      ? 'No hay reuniones con fecha registrada entre el '+fmtFecha(rango.desde)+' y el '+fmtFecha(rango.hasta)
+      : 'No hay reuniones con fecha registrada para '+fmtFecha(filterFecha);
+    return remindersHtml+resumenHtml+filterHtml+'<div class="empty">'+vacioMsg+
+      (filterAsesor!=='todos'?' con '+escapeHtml(filterAsesor):'')+'.<br>Las oportunidades sin fecha agendada aparecen en la vista "Funnel". Usa "Nuevo prospecto" y luego "Agendar cita" para agregar una.</div>';
+  }
+  var html = remindersHtml+resumenHtml+filterHtml;
+  if(esSemana){
+    var diasSemana = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+    var showAsesorTicket = isAdmin();
+    var groupsByDay = {}; var dayOrder = [];
+    filtered.forEach(function(c){
+      if(!groupsByDay[c.fecha]){ groupsByDay[c.fecha]=[]; dayOrder.push(c.fecha); }
+      groupsByDay[c.fecha].push(c);
+    });
+    dayOrder.sort();
+    dayOrder.forEach(function(fecha){
+      var nombreDia = diasSemana[new Date(fecha+'T00:00:00').getDay()];
+      var label = nombreDia.charAt(0).toUpperCase()+nombreDia.slice(1)+' '+fmtFecha(fecha);
+      html += '<div class="day-group"><h2>'+label+'</h2>';
+      groupsByDay[fecha].forEach(function(c){ html += renderTicket(c, showAsesorTicket); });
+      html += '</div>';
+    });
+    return html;
+  }
   var groups = {}; var order = [];
   filtered.forEach(function(c){
     if(!groups[c.asesor]){ groups[c.asesor]=[]; order.push(c.asesor); }
     groups[c.asesor].push(c);
   });
   order.sort(function(a,b){ return a.localeCompare(b,'es'); });
-  var filterHtml =
-    '<div class="filters">'+
-      '<input type="date" id="f-fecha" value="'+filterFecha+'">'+
-      '<button class="today-btn" id="f-today">Hoy</button>'+
-      (isAdmin() ? '<select id="f-asesor"><option value="todos" '+(filterAsesor==='todos'?'selected':'')+'>Todos los asesores</option>'+
-        asesoresUnicos.map(function(a){ return '<option value="'+escapeHtml(a)+'" '+(filterAsesor===a?'selected':'')+'>'+escapeHtml(a)+'</option>'; }).join('')+'</select>' : '')+
-      '<button class="btn" id="f-export" style="margin-left:auto;">Exportar día a CSV</button>'+
-    '</div>';
-  if(order.length===0){
-    return remindersHtml+resumenHtml+filterHtml+'<div class="empty">No hay reuniones con fecha registrada para '+fmtFecha(filterFecha)+
-      (filterAsesor!=='todos'?' con '+escapeHtml(filterAsesor):'')+'.<br>Las oportunidades sin fecha agendada aparecen en la vista "Funnel". Usa "Nuevo prospecto" y luego "Agendar cita" para agregar una.</div>';
-  }
-  var html = remindersHtml+resumenHtml+filterHtml;
   order.forEach(function(asesor){
     html += '<div class="day-group"><h2>'+escapeHtml(asesor)+'</h2>';
     groups[asesor].forEach(function(c){ html += renderTicket(c, false); });
@@ -1683,19 +1723,26 @@ function wireAgendaEvents(){
   var fFecha = document.getElementById('f-fecha');
   var fAsesor = document.getElementById('f-asesor');
   var fToday = document.getElementById('f-today');
+  var agModoDia = document.getElementById('ag-mode-dia');
+  var agModoSemana = document.getElementById('ag-mode-semana');
   if(fFecha) fFecha.onchange = function(e){ filterFecha = e.target.value; render(); };
   if(fAsesor) fAsesor.onchange = function(e){ filterAsesor = e.target.value; render(); };
   if(fToday) fToday.onclick = function(){ filterFecha = todayStr(); render(); };
+  if(agModoDia) agModoDia.onclick = function(){ agendaViewMode = 'dia'; render(); };
+  if(agModoSemana) agModoSemana.onclick = function(){ agendaViewMode = 'semana'; render(); };
   var fExport = document.getElementById('f-export');
   if(fExport) fExport.onclick = function(){
-    var filtered = state.oportunidades.filter(function(c){ return c.fecha === filterFecha; });
+    var esSemana = agendaViewMode === 'semana';
+    var rango = esSemana ? weekRangeFor(filterFecha) : {desde:filterFecha, hasta:filterFecha};
+    var filtered = state.oportunidades.filter(function(c){ return c.fecha && c.fecha >= rango.desde && c.fecha <= rango.hasta; });
     if(filterAsesor !== 'todos') filtered = filtered.filter(function(c){ return c.asesor === filterAsesor; });
-    filtered.sort(function(a,b){ return (a.hora||'').localeCompare(b.hora||''); });
+    filtered.sort(function(a,b){ return (a.fecha||'').localeCompare(b.fecha||'') || (a.hora||'').localeCompare(b.hora||''); });
     var headers = ['Asesor','Nombres','Apellidos','Teléfono','Correo','Tipo de documento','N.º de documento','Producto','Fecha','Hora','Modalidad','Lugar','Enlace de reunión','Etapa','Monto USD','Notas'];
     var rows = filtered.map(function(c){
       return [c.asesor,c.clienteNombres,c.clienteApellidos,c.telefono||'',c.correo||'',c.tipoDocumento||'',c.numeroDocumento||'',c.producto,c.fecha,c.hora||'',c.modalidad,c.lugar||'',c.meetLink||'',stageLabel(c.etapa),(c.etapa==='emitida'&&c.monto!=null)?c.monto:'',c.notas||''];
     });
-    downloadTextFile('agenda_'+filterFecha+(filterAsesor!=='todos'?'_'+filterAsesor.replace(/\s+/g,'_'):'')+'.csv', toCSV(headers, rows));
+    var nombreArchivo = esSemana ? ('agenda_semana_'+rango.desde+'_a_'+rango.hasta) : ('agenda_'+filterFecha);
+    downloadTextFile(nombreArchivo+(filterAsesor!=='todos'?'_'+filterAsesor.replace(/\s+/g,'_'):'')+'.csv', toCSV(headers, rows));
   };
   var notifBtn = document.getElementById('notif-toggle');
   if(notifBtn) notifBtn.onclick = toggleNotifs;
