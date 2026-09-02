@@ -858,6 +858,7 @@ function visibleProspectos(){
 
 // ---------- funnel helpers ----------
 function opsOfAsesor(asesor){ return state.oportunidades.filter(function(o){ return o.asesor===asesor; }); }
+function prospectosOfAsesor(asesor){ return state.prospectos.filter(function(p){ return p.asesor===asesor; }); }
 function reachedStage(op, stageKey){
   for(var i=0;i<op.historial.length;i++){ if(op.historial[i].etapa===stageKey) return true; }
   return false;
@@ -1984,8 +1985,8 @@ function renderCountBars(rows, opts){
     '</div>';
   }).join('')+'</div>';
 }
-function funnelRows(creadas, stageCounts, perdidas){
-  return [{label:'Creadas', n:creadas}]
+function funnelRows(prospectos, stageCounts, perdidas){
+  return [{label:'Prospectos', n:prospectos}]
     .concat(stageCounts.map(function(sc){ return {label:sc.label, n:sc.n}; }))
     .concat([{label:'Perdidas', n:perdidas, danger: perdidas>0}]);
 }
@@ -2020,39 +2021,40 @@ function renderComparativo(asesoresUnicos){
   var rows = asesoresUnicos.map(function(a){
     var all = opsOfAsesor(a);
     var cohort = filterByMonthRangeCreated(all, desde, hasta);
-    var creadas = cohort.length;
+    var citasCreadas = cohort.length;
+    var prospectos = filterByMonthRangeCreated(prospectosOfAsesor(a), desde, hasta).length;
     var presentadas = countReached(cohort, 'presentada');
     var gestion = countReached(cohort, 'gestion');
     var acres = countReached(cohort, 'acres');
     var emitidas = countReached(cohort, 'emitida');
     var perdidas = cohort.filter(function(o){ return o.etapa==='perdida'; }).length;
-    var conversion = creadas ? Math.round(emitidas/creadas*100) : 0;
+    var conversion = prospectos ? Math.round(emitidas/prospectos*100) : 0;
     var cierresRango = filterByMonthRangeEmitida(all, desde, hasta);
     var cierresCount = cierresRango.length;
     var monto = cierresRango.reduce(function(sum,o){ return sum+(typeof o.monto==='number'?o.monto:0); }, 0);
     var meta = sumMetasRango(a, desde, hasta);
-    return {a:a, creadas:creadas, presentadas:presentadas, gestion:gestion, acres:acres, emitidas:emitidas,
+    return {a:a, prospectos:prospectos, citasCreadas:citasCreadas, presentadas:presentadas, gestion:gestion, acres:acres, emitidas:emitidas,
       perdidas:perdidas, conversion:conversion, cierresCount:cierresCount, monto:monto, meta:meta};
   });
-  var totalCreadas = rows.reduce(function(s,r){ return s+r.creadas; }, 0);
+  var totalProspectos = rows.reduce(function(s,r){ return s+r.prospectos; }, 0);
   var totalEmitidas = rows.reduce(function(s,r){ return s+r.emitidas; }, 0);
   var totalMonto = rows.reduce(function(s,r){ return s+r.monto; }, 0);
-  var conversionGlobal = totalCreadas ? Math.round(totalEmitidas/totalCreadas*100) : 0;
+  var conversionGlobal = totalProspectos ? Math.round(totalEmitidas/totalProspectos*100) : 0;
   var ticketProm = totalEmitidas ? totalMonto/totalEmitidas : 0;
   var kpis = renderKpiRow([
-    {n: totalCreadas, l:'Citas creadas'},
+    {n: totalProspectos, l:'Prospectos'},
     {n: totalEmitidas, l:'Emitidas / cerradas'},
     {n: conversionGlobal+'%', l:'Conversión global'},
     {n: fmtUSD(totalMonto), l:'Total emitido (USD)'},
     {n: fmtUSD(ticketProm), l:'Ticket promedio (USD)'}
   ]);
   var body = rows.map(function(r){
-    var avanceCitas = r.meta.citasMeta ? Math.round(r.creadas/r.meta.citasMeta*100) : null;
+    var avanceCitas = r.meta.citasMeta ? Math.round(r.citasCreadas/r.meta.citasMeta*100) : null;
     var avanceCierres = r.meta.cierresMeta ? Math.round(r.cierresCount/r.meta.cierresMeta*100) : null;
     var avanceMonto = r.meta.montoMeta ? Math.round(r.monto/r.meta.montoMeta*100) : null;
     return '<tr>'+
       '<td>'+escapeHtml(r.a)+'</td>'+
-      '<td>'+r.creadas+'</td>'+
+      '<td>'+r.prospectos+'</td>'+
       '<td>'+r.presentadas+'</td>'+
       '<td>'+r.gestion+'</td>'+
       '<td>'+r.acres+'</td>'+
@@ -2092,7 +2094,7 @@ function renderComparativo(asesoresUnicos){
   '<div class="report-card">'+
     '<h2>Comparativo del equipo · '+fmtRango(desde,hasta)+'</h2>'+
     '<div class="scroll-x"><table class="cmp"><thead><tr>'+
-      '<th>Asesor</th><th>Creadas</th><th>Presentada</th><th>Gestión</th><th>Acres</th><th>Emitidas</th><th>Perdidas</th>'+
+      '<th>Asesor</th><th>Prospectos</th><th>Presentada</th><th>Gestión</th><th>Acres</th><th>Emitidas</th><th>Perdidas</th>'+
       '<th>Conversión</th><th>Monto USD</th><th>Meta citas</th><th>Avance citas</th><th>Meta cierres</th><th>Avance cierres</th>'+
       '<th>Meta monto USD</th><th>Avance monto</th>'+
     '</tr></thead><tbody>'+body+'</tbody></table></div>'+
@@ -2111,10 +2113,11 @@ function renderDetalleAsesor(asesor, admin){
   var mismoMes = !!desde && desde === hasta;
   var all = opsOfAsesor(asesor);
   var cohort = filterByMonthRangeCreated(all, desde, hasta);
-  var creadas = cohort.length;
+  var citasCreadas = cohort.length;
+  var prospectos = filterByMonthRangeCreated(prospectosOfAsesor(asesor), desde, hasta).length;
   var stageCounts = STAGES.map(function(s){ return {label:s.label, n: countReached(cohort, s.key)}; });
   var perdidas = cohort.filter(function(o){ return o.etapa==='perdida'; }).length;
-  var conversion = creadas ? Math.round(stageCounts[stageCounts.length-1].n/creadas*100) : 0;
+  var conversion = prospectos ? Math.round(stageCounts[stageCounts.length-1].n/prospectos*100) : 0;
   var cierresRango = filterByMonthRangeEmitida(all, desde, hasta);
   var cierresCount = cierresRango.length;
   var monto = cierresRango.reduce(function(sum,o){ return sum+(typeof o.monto==='number'?o.monto:0); }, 0);
@@ -2122,14 +2125,14 @@ function renderDetalleAsesor(asesor, admin){
   var meta = sumMetasRango(asesor, desde, hasta);
 
   var kpis = renderKpiRow([
-    {n: creadas, l:'Citas creadas'},
+    {n: prospectos, l:'Prospectos'},
     {n: cierresCount, l:'Emitidas / cerradas'},
     {n: conversion+'%', l:'Conversión'},
     {n: fmtUSD(monto), l:'Total emitido (USD)'},
     {n: fmtUSD(ticketProm), l:'Ticket promedio (USD)'}
   ]);
 
-  var funnelHtml = renderCountBars(funnelRows(creadas, stageCounts, perdidas), {noSort:true});
+  var funnelHtml = renderCountBars(funnelRows(prospectos, stageCounts, perdidas), {noSort:true});
 
   var metaEditable = admin;
   var metaCitasField = metaEditable
@@ -2146,7 +2149,7 @@ function renderDetalleAsesor(asesor, admin){
   if(mismoMes){
     avanceHtml =
       '<div class="grid3">'+
-        '<div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:4px;">Citas agendadas: meta '+metaCitasField+'</div>'+metaProgressBar(creadas, meta.citasMeta)+'</div>'+
+        '<div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:4px;">Citas agendadas: meta '+metaCitasField+'</div>'+metaProgressBar(citasCreadas, meta.citasMeta)+'</div>'+
         '<div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:4px;">Cierres / emisiones: meta '+metaCierresField+'</div>'+metaProgressBar(cierresCount, meta.cierresMeta)+'</div>'+
         '<div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:4px;">Monto emitido (USD): meta '+metaMontoField+'</div>'+metaProgressBar(monto, meta.montoMeta)+'</div>'+
       '</div>'+
@@ -2154,7 +2157,7 @@ function renderDetalleAsesor(asesor, admin){
   } else if(desde && hasta){
     avanceHtml =
       '<div class="grid3">'+
-        '<div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:4px;">Citas agendadas: meta acumulada del periodo '+meta.citasMeta+'</div>'+metaProgressBar(creadas, meta.citasMeta)+'</div>'+
+        '<div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:4px;">Citas agendadas: meta acumulada del periodo '+meta.citasMeta+'</div>'+metaProgressBar(citasCreadas, meta.citasMeta)+'</div>'+
         '<div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:4px;">Cierres / emisiones: meta acumulada del periodo '+meta.cierresMeta+'</div>'+metaProgressBar(cierresCount, meta.cierresMeta)+'</div>'+
         '<div><div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:4px;">Monto emitido (USD): meta acumulada del periodo '+fmtUSD(meta.montoMeta)+'</div>'+metaProgressBar(monto, meta.montoMeta)+'</div>'+
       '</div>'+
@@ -2184,9 +2187,9 @@ function renderDetalleAsesor(asesor, admin){
     trendCard+
     '<div class="report-card">'+
       '<h2>Funnel · '+fmtRango(desde,hasta)+'</h2>'+
-      '<div class="sub" style="margin-bottom:4px;">Desde citas creadas hasta el cierre o la pérdida</div>'+
+      '<div class="sub" style="margin-bottom:4px;">Desde prospectos hasta el cierre o la pérdida</div>'+
       funnelHtml+
-      '<div style="font-size:13px;margin-top:10px;"><b>Tasa de conversión (creadas → emitidas):</b> '+conversion+'%</div>'+
+      '<div style="font-size:13px;margin-top:10px;"><b>Tasa de conversión (prospectos → emitidas):</b> '+conversion+'%</div>'+
     '</div>'+
     panoramaCard+
     '<div class="report-card">'+
@@ -2286,25 +2289,26 @@ function saveMetaFromComparativo(asesor, field, value){
 }
 function exportComparativoCSV(asesoresUnicos){
   var desde = reportDesde, hasta = reportHasta;
-  var headers = ['Asesor','Creadas','Presentada','Gestión comercial','Confirmada Acres','Emitidas','Perdidas','Conversión %','Monto emitido USD','Meta citas','Avance citas %','Meta cierres','Avance cierres %','Meta monto USD','Avance monto %'];
+  var headers = ['Asesor','Prospectos','Presentada','Gestión comercial','Confirmada Acres','Emitidas','Perdidas','Conversión %','Monto emitido USD','Meta citas','Avance citas %','Meta cierres','Avance cierres %','Meta monto USD','Avance monto %'];
   var rows = asesoresUnicos.map(function(a){
     var all = opsOfAsesor(a);
     var cohort = filterByMonthRangeCreated(all, desde, hasta);
-    var creadas = cohort.length;
+    var citasCreadas = cohort.length;
+    var prospectos = filterByMonthRangeCreated(prospectosOfAsesor(a), desde, hasta).length;
     var presentadas = countReached(cohort, 'presentada');
     var gestion = countReached(cohort, 'gestion');
     var acres = countReached(cohort, 'acres');
     var emitidas = countReached(cohort, 'emitida');
     var perdidas = cohort.filter(function(o){ return o.etapa==='perdida'; }).length;
-    var conversion = creadas ? Math.round(emitidas/creadas*100) : 0;
+    var conversion = prospectos ? Math.round(emitidas/prospectos*100) : 0;
     var cierresRango = filterByMonthRangeEmitida(all, desde, hasta);
     var cierresCount = cierresRango.length;
     var monto = cierresRango.reduce(function(sum,o){ return sum+(typeof o.monto==='number'?o.monto:0); }, 0);
     var meta = sumMetasRango(a, desde, hasta);
-    var avanceCitas = meta.citasMeta ? Math.round(creadas/meta.citasMeta*100) : '';
+    var avanceCitas = meta.citasMeta ? Math.round(citasCreadas/meta.citasMeta*100) : '';
     var avanceCierres = meta.cierresMeta ? Math.round(cierresCount/meta.cierresMeta*100) : '';
     var avanceMonto = meta.montoMeta ? Math.round(monto/meta.montoMeta*100) : '';
-    return [a, creadas, presentadas, gestion, acres, emitidas, perdidas, conversion, monto.toFixed(2), meta.citasMeta, avanceCitas, meta.cierresMeta, avanceCierres, meta.montoMeta, avanceMonto];
+    return [a, prospectos, presentadas, gestion, acres, emitidas, perdidas, conversion, monto.toFixed(2), meta.citasMeta, avanceCitas, meta.cierresMeta, avanceCierres, meta.montoMeta, avanceMonto];
   });
   var suffix = (desde||hasta) ? ((desde||'inicio')+'_a_'+(hasta||'hoy')) : 'todo';
   downloadTextFile('reporte_comparativo_'+suffix+'.csv', toCSV(headers, rows));
@@ -2687,6 +2691,40 @@ function wireAgendarFormEvents(){
     if(!agendarForm.fecha) agendarErrors.fecha = 'Ingresa la fecha.';
     if(!agendarForm.hora) agendarErrors.hora = 'Ingresa la hora.';
     if(Object.keys(agendarErrors).length > 0){ render(); return; }
+
+    var nuevaFecha = agendarForm.fecha, nuevaHora = agendarForm.hora, nuevaModalidad = agendarForm.modalidad;
+    var nuevoLugar = agendarForm.modalidad==='Presencial' ? agendarForm.lugar.trim() : '';
+    var nuevoMeet = agendarForm.modalidad==='Virtual' ? agendarForm.meetLink.trim() : '';
+    var nuevaNota = agendarForm.notas.trim();
+
+    // Si el prospecto ya tiene una oportunidad activa (no perdida ni emitida), la
+    // nueva reunión reprograma esa misma oportunidad en vez de crear una tarjeta
+    // aparte: un seguimiento agendado desde "Gestión comercial", por ejemplo,
+    // se queda en "Gestión comercial" — no vuelve a "Agendada".
+    var activas = citasDeProspecto(p.id).filter(function(o){ return o.etapa!=='perdida' && o.etapa!=='emitida'; });
+    activas.sort(function(a,b){ return new Date(b.actualizadoEn||b.creadoEn||0) - new Date(a.actualizadoEn||a.creadoEn||0); });
+    var activa = activas[0] || null;
+
+    filterFecha = nuevaFecha || todayStr();
+    filterAsesor = currentUser.rol === 'asesor' ? currentUser.nombre : 'todos';
+    view = 'funnel';
+    agendarForm = defaultAgendarForm();
+
+    if(activa){
+      mutate(function(){
+        activa.fecha = nuevaFecha;
+        activa.hora = nuevaHora;
+        activa.modalidad = nuevaModalidad;
+        activa.lugar = nuevoLugar;
+        activa.meetLink = nuevoMeet;
+        if(nuevaNota) activa.notas = (activa.notas ? activa.notas+'\n' : '') + nuevaNota;
+        activa.actualizadoEn = nowISO();
+        activa.historial.push({etapa: activa.etapa, fecha: nowISO(), usuario: currentUser.nombre});
+      });
+      supaUpdate('oportunidades', activa.id, oportunidadToRow(activa));
+      return;
+    }
+
     var nueva = {
       id: uid(),
       prospectoId: p.id,
@@ -2698,12 +2736,12 @@ function wireAgendarFormEvents(){
       tipoDocumento: p.tipoDocumento,
       numeroDocumento: p.numeroDocumento,
       producto: p.producto,
-      lugar: agendarForm.modalidad==='Presencial' ? agendarForm.lugar.trim() : '',
-      fecha: agendarForm.fecha,
-      hora: agendarForm.hora,
-      modalidad: agendarForm.modalidad,
-      meetLink: agendarForm.modalidad==='Virtual' ? agendarForm.meetLink.trim() : '',
-      notas: agendarForm.notas.trim(),
+      lugar: nuevoLugar,
+      fecha: nuevaFecha,
+      hora: nuevaHora,
+      modalidad: nuevaModalidad,
+      meetLink: nuevoMeet,
+      notas: nuevaNota,
       etapa: 'agendada',
       motivoPerdida: null,
       evidencia: null,
@@ -2711,10 +2749,6 @@ function wireAgendarFormEvents(){
       actualizadoEn: nowISO(),
       historial: [{etapa:'agendada', fecha: nowISO(), usuario: currentUser.nombre}]
     };
-    filterFecha = nueva.fecha || todayStr();
-    filterAsesor = currentUser.rol === 'asesor' ? currentUser.nombre : 'todos';
-    view = 'funnel';
-    agendarForm = defaultAgendarForm();
     mutate(function(s){ s.oportunidades.push(nueva); });
     supaInsert('oportunidades', oportunidadToRow(nueva));
   };
