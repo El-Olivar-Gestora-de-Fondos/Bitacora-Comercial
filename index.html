@@ -450,8 +450,9 @@ function escapeHtml(s){
 function fmtFecha(f){
   if(!f) return '';
   var parts = f.split('-'); var y=parts[0], m=parts[1], d=parts[2];
-  var meses=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-  return d+' '+meses[parseInt(m,10)-1]+' '+y;
+  if(!y || !m || !d) return f;
+  d = String(d).padStart(2,'0'); m = String(m).padStart(2,'0');
+  return d+'/'+m+'/'+y;
 }
 function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
 
@@ -1717,23 +1718,54 @@ function renderFunnel(asesoresUnicos){
   if(kanbanAsesor !== 'todos') pool = pool.filter(function(o){ return o.asesor===kanbanAsesor; });
   if(kanbanProducto !== 'todos') pool = pool.filter(function(o){ return o.producto===kanbanProducto; });
   var showAsesor = isAdmin() && kanbanAsesor === 'todos';
+
+  // Prospectos que todavía no tienen ninguna cita agendada: van en su propia
+  // columna al inicio, en vez de aparecer (incorrectamente) como "Agendada".
+  var prospectosPool = visibleProspectos().filter(function(p){ return citasDeProspecto(p.id).length === 0; });
+  if(kanbanAsesor !== 'todos') prospectosPool = prospectosPool.filter(function(p){ return p.asesor === kanbanAsesor; });
+  if(kanbanProducto !== 'todos') prospectosPool = prospectosPool.filter(function(p){ return p.producto === kanbanProducto; });
+  var prospectosCol = '<div class="kcol kcol-pinned"><h3>Prospectos<span class="count">'+prospectosPool.length+'</span></h3>'+
+    '<div class="kcol-body">'+
+    (prospectosPool.length ? prospectosPool.map(function(p){ return renderKCardProspecto(p, showAsesor); }).join('') : '<div class="kcol-empty" style="font-size:11.5px;color:var(--ink-soft);text-align:center;padding:14px 4px;">Sin prospectos pendientes de agendar</div>')+
+    '</div></div>';
+
   var cols = STAGES.map(function(s){ return {key:s.key, label:s.label}; });
   cols.push({key:'perdida', label:'Declinada / Perdida'});
-  var board = '<div class="kanban">'+cols.map(function(col, i){
+  var board = '<div class="kanban">'+prospectosCol+cols.map(function(col){
     var items = pool.filter(function(o){ return o.etapa === col.key; })
       .sort(function(a,b){ return new Date(b.actualizadoEn||b.creadoEn||0) - new Date(a.actualizadoEn||a.creadoEn||0); });
-    return '<div class="kcol'+(i===0?' kcol-pinned':'')+'"><h3>'+col.label+'<span class="count">'+items.length+'</span></h3>'+
+    return '<div class="kcol"><h3>'+col.label+'<span class="count">'+items.length+'</span></h3>'+
       '<div class="kcol-body" data-drop-col="'+col.key+'">'+
       (items.length ? items.map(function(o){ return renderKCard(o, showAsesor); }).join('') : '<div class="kcol-empty" style="font-size:11.5px;color:var(--ink-soft);text-align:center;padding:14px 4px;">Sin oportunidades</div>')+
       '</div></div>';
   }).join('')+'</div>';
   return filterHtml+board;
 }
+function renderKCardProspecto(p, showAsesor){
+  var prodBadge = p.producto === 'Bono Corporativo' ? '<span class="badge b-bono">Bono</span>' : '<span class="badge b-fondo">Fondo</span>';
+  return (
+    '<div class="kcard">'+
+      '<div class="kc-name">'+escapeHtml(p.clienteNombres)+' '+escapeHtml(p.clienteApellidos)+'</div>'+
+      '<div class="kc-meta">'+(showAsesor?escapeHtml(p.asesor)+' · ':'')+prodBadge+'</div>'+
+      '<div class="kc-meta">'+escapeHtml(p.telefono||'—')+(p.correo?' · '+escapeHtml(p.correo):'')+'</div>'+
+      (p.notas ? '<div class="kc-meta">'+escapeHtml(p.notas)+'</div>' : '')+
+      '<div class="kc-actions"><button type="button" class="btn primary" data-agendar-prospecto-kanban="'+p.id+'">Agendar cita</button></div>'+
+    '</div>'
+  );
+}
 function wireFunnelEvents(asesoresUnicos){
   var kAsesor = document.getElementById('k-asesor');
   var kProducto = document.getElementById('k-producto');
   if(kAsesor) kAsesor.onchange = function(e){ kanbanAsesor = e.target.value; render(); };
   if(kProducto) kProducto.onchange = function(e){ kanbanProducto = e.target.value; render(); };
+  document.querySelectorAll('[data-agendar-prospecto-kanban]').forEach(function(btn){
+    btn.onclick = function(){
+      agendarForm = defaultAgendarForm();
+      agendarForm.prospectoId = btn.dataset.agendarProspectoKanban;
+      view = 'agendar';
+      render();
+    };
+  });
   wireCommonOpEvents();
   wireDragAndDrop();
 }
@@ -1911,11 +1943,6 @@ function funnelRows(creadas, stageCounts, perdidas){
     .concat(stageCounts.map(function(sc){ return {label:sc.label, n:sc.n}; }))
     .concat([{label:'Perdidas', n:perdidas, danger: perdidas>0}]);
 }
-function productoMix(ops){
-  var bono = ops.filter(function(o){ return o.producto === 'Bono Corporativo'; }).length;
-  var fondo = ops.length - bono;
-  return [{label:'Bono Corporativo', n:bono}, {label:'Fondo de inversión', n:fondo}];
-}
 function topMotivosPerdida(ops, limit){
   var counts = {};
   ops.forEach(function(o){
@@ -2005,12 +2032,8 @@ function renderComparativo(asesoresUnicos){
   var panoramaCard =
     '<div class="report-card">'+
       '<h2>Panorama del equipo · '+fmtRango(desde,hasta)+'</h2>'+
-      '<div class="grid2">'+
-        '<div><div class="sub" style="margin-bottom:4px;">Mezcla de producto (citas creadas)</div>'+renderCountBars(productoMix(teamCohort))+'</div>'+
-        '<div><div class="sub" style="margin-bottom:4px;">Motivos de pérdida más frecuentes</div>'+
-          (teamCohort.some(function(o){ return o.etapa==='perdida'; }) ? renderCountBars(topMotivosPerdida(teamCohort, 5)) : '<div class="sub">Sin oportunidades perdidas en este periodo.</div>')+
-        '</div>'+
-      '</div>'+
+      '<div class="sub" style="margin-bottom:4px;">Motivos de pérdida más frecuentes</div>'+
+      (teamCohort.some(function(o){ return o.etapa==='perdida'; }) ? renderCountBars(topMotivosPerdida(teamCohort, 5)) : '<div class="sub">Sin oportunidades perdidas en este periodo.</div>')+
     '</div>';
   return '<div class="report-card">'+
     '<h2>Dashboard del equipo · '+fmtRango(desde,hasta)+'</h2>'+
@@ -2104,12 +2127,8 @@ function renderDetalleAsesor(asesor, admin){
   var panoramaCard =
     '<div class="report-card">'+
       '<h2>Panorama del periodo</h2>'+
-      '<div class="grid2">'+
-        '<div><div class="sub" style="margin-bottom:4px;">Mezcla de producto (citas creadas)</div>'+renderCountBars(productoMix(cohort))+'</div>'+
-        '<div><div class="sub" style="margin-bottom:4px;">Motivos de pérdida más frecuentes</div>'+
-          (perdidas ? renderCountBars(topMotivosPerdida(cohort, 5)) : '<div class="sub">Sin oportunidades perdidas en este periodo.</div>')+
-        '</div>'+
-      '</div>'+
+      '<div class="sub" style="margin-bottom:4px;">Motivos de pérdida más frecuentes</div>'+
+      (perdidas ? renderCountBars(topMotivosPerdida(cohort, 5)) : '<div class="sub">Sin oportunidades perdidas en este periodo.</div>')+
     '</div>';
 
   return '<div class="report-card">'+
@@ -2691,8 +2710,8 @@ function renderImportar(asesoresUnicos){
   }).join('');
   return (
     '<div class="report-card">'+
-      '<h2>Importar leads / oportunidades (CSV)</h2>'+
-      '<div class="sub" style="margin-bottom:10px;">Columnas reconocidas (en cualquier orden): Asesor, Nombres, Apellidos, Teléfono, Correo, Tipo de documento, N.º de documento, Producto, Fecha, Hora, Modalidad, Lugar, Enlace, Notas. Asesor, Nombres, Apellidos y Teléfono son obligatorios; el resto queda vacío si no se incluye y se puede completar después desde el funnel. Cada fila crea a la vez el prospecto y su cita ya agendada (a diferencia de la carga manual, que separa ambos pasos).</div>'+
+      '<h2>Importar prospectos (CSV)</h2>'+
+      '<div class="sub" style="margin-bottom:10px;">Columnas reconocidas (en cualquier orden): Asesor, Nombres, Apellidos, Teléfono, Correo, Tipo de documento, N.º de documento, Producto, Notas. Asesor, Nombres, Apellidos y Teléfono son obligatorios; el resto queda vacío si no se incluye y se puede completar después desde el funnel. El CSV solo crea prospectos — el agendamiento de la primera cita se hace después, dentro del sistema, desde la columna "Prospectos" del funnel.</div>'+
       '<div class="filters">'+
         '<button class="btn" id="tpl-leads">Descargar plantilla CSV</button>'+
         '<input type="file" id="file-leads" accept=".csv,text/csv">'+
@@ -2745,17 +2764,18 @@ function eliminarUsuariosSeleccionados(){
 function renderLeadsPreview(){
   var okRows = leadsPreview.rows.filter(function(r){ return !r.error; });
   var errRows = leadsPreview.rows.filter(function(r){ return r.error; });
-  var head = '<tr><th>#</th><th>Asesor</th><th>Nombres</th><th>Apellidos</th><th>Teléfono</th><th>Correo</th><th>Producto</th><th>Fecha</th><th>Estado</th></tr>';
+  var head = '<tr><th>#</th><th>Asesor</th><th>Nombres</th><th>Apellidos</th><th>Teléfono</th><th>Correo</th><th>Producto</th><th>Estado</th></tr>';
   var body = leadsPreview.rows.map(function(r, i){
+    var estado = r.error ? escapeHtml(r.error) : 'OK';
     return '<tr class="'+(r.error?'row-err':'')+'"><td>'+(i+1)+'</td><td>'+escapeHtml(r.asesor||'')+'</td><td>'+escapeHtml(r.clienteNombres||'')+
       '</td><td>'+escapeHtml(r.clienteApellidos||'')+'</td><td>'+escapeHtml(r.telefono||'')+'</td><td>'+escapeHtml(r.correo||'')+
-      '</td><td>'+escapeHtml(r.producto||'')+'</td><td>'+escapeHtml(r.fecha||'')+'</td><td>'+(r.error?escapeHtml(r.error):'OK')+'</td></tr>';
+      '</td><td>'+escapeHtml(r.producto||'')+'</td><td>'+estado+'</td></tr>';
   }).join('');
   return '<div class="import-preview"><table><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>'+
-    '<div class="sub" style="margin:8px 0;">'+okRows.length+' fila(s) listas para importar · '+errRows.length+' con error (se omitirán).</div>'+
+    '<div class="sub" style="margin:8px 0;">'+okRows.length+' prospecto(s) listo(s) para importar · '+errRows.length+' con error (se omitirán).</div>'+
     '<div class="submit-row">'+
       '<button class="btn" id="leads-cancel">Cancelar</button>'+
-      '<button class="btn primary" id="leads-confirm" '+(okRows.length?'':'disabled')+'>Importar '+okRows.length+' oportunidad(es)</button>'+
+      '<button class="btn primary" id="leads-confirm" '+(okRows.length?'':'disabled')+'>Importar '+okRows.length+' prospecto(s)</button>'+
     '</div>';
 }
 function renderAsesoresPreviewHtml(){
@@ -2814,19 +2834,15 @@ function parseLeadsCSV(text){
     var numeroDocumento = hasAsesorCol ? get('numeroDocumento') : (r[6]||'').trim();
     // Por ahora solo se ofrece Bono Corporativo; se ignora lo que traiga la columna Producto.
     var producto = 'Bono Corporativo';
-    var modalidadRaw = normHeader(hasAsesorCol ? get('modalidad') : (r[10]||''));
-    var modalidad = modalidadRaw.indexOf('virtual') !== -1 ? 'Virtual' : 'Presencial';
+    // El CSV solo crea prospectos: no se leen columnas de agendamiento (Fecha, Hora,
+    // Modalidad, Lugar, Enlace) aunque el archivo las traiga (por compatibilidad con
+    // plantillas antiguas); Notas conserva su posición de columna en archivos sin encabezado.
     var item = {
       asesor: asesor, clienteNombres: nombres, clienteApellidos: apellidos,
       telefono: telefono, correo: correo,
       tipoDocumento: numeroDocumento ? (tipoDocumento || 'DNI') : '',
       numeroDocumento: numeroDocumento,
       producto: producto,
-      fecha: hasAsesorCol ? get('fecha') : (r[8]||'').trim(),
-      hora: hasAsesorCol ? get('hora') : (r[9]||'').trim(),
-      modalidad: modalidad,
-      lugar: modalidad==='Presencial' ? (hasAsesorCol ? get('lugar') : (r[11]||'').trim()) : '',
-      meetLink: modalidad==='Virtual' ? (hasAsesorCol ? get('meetLink') : (r[12]||'').trim()) : '',
       notas: hasAsesorCol ? get('notas') : (r[13]||'').trim()
     };
     if(!item.asesor || !item.clienteNombres || !item.clienteApellidos || !item.telefono){
@@ -2866,8 +2882,8 @@ function wireLeadsImportEvents(){
   var tplLeads = document.getElementById('tpl-leads');
   if(tplLeads) tplLeads.onclick = function(){
     downloadTextFile('plantilla_leads.csv', toCSV(
-      ['Asesor','Nombres','Apellidos','Telefono','Correo','TipoDocumento','NumeroDocumento','Producto','Fecha','Hora','Modalidad','Lugar','Enlace','Notas'],
-      [[isAdmin() ? 'Juana Pérez' : currentUser.nombre,'María','Gómez','+51 999 999 999','maria.gomez@correo.com','DNI','12345678','Bono Corporativo','2026-09-01','10:00','Presencial','Oficina San Isidro','','Cliente referido']]
+      ['Asesor','Nombres','Apellidos','Telefono','Correo','TipoDocumento','NumeroDocumento','Producto','Notas'],
+      [[isAdmin() ? 'Juana Pérez' : currentUser.nombre,'María','Gómez','+51 999 999 999','maria.gomez@correo.com','DNI','12345678','Bono Corporativo','Cliente referido']]
     ));
   };
   var fileLeads = document.getElementById('file-leads');
@@ -2898,9 +2914,11 @@ function wireLeadsImportEvents(){
   var leadsConfirm = document.getElementById('leads-confirm');
   if(leadsConfirm) leadsConfirm.onclick = function(){
     var ok = leadsPreview.rows.filter(function(r){ return !r.error; });
-    var prospectoRows = [], oportunidadRows = [];
+    var prospectoRows = [];
     mutate(function(s){
       ok.forEach(function(r){
+        // El CSV solo crea prospectos; el agendamiento de la primera cita
+        // siempre se hace luego, dentro del sistema (botón "Agendar cita").
         var prospecto = {
           id: uid(), asesor: r.asesor, clienteNombres: r.clienteNombres, clienteApellidos: r.clienteApellidos,
           telefono: r.telefono||'', correo: r.correo||'', tipoDocumento: r.tipoDocumento||'', numeroDocumento: r.numeroDocumento||'',
@@ -2908,20 +2926,9 @@ function wireLeadsImportEvents(){
         };
         s.prospectos.push(prospecto);
         prospectoRows.push(prospectoToRow(prospecto));
-        var op = {
-          id: uid(), prospectoId: prospecto.id, asesor: r.asesor, clienteNombres: r.clienteNombres, clienteApellidos: r.clienteApellidos,
-          telefono: r.telefono||'', correo: r.correo||'', tipoDocumento: r.tipoDocumento||'', numeroDocumento: r.numeroDocumento||'',
-          producto: r.producto, lugar: r.lugar||'', fecha: r.fecha||'', hora: r.hora||'',
-          modalidad: r.modalidad, meetLink: r.meetLink||'', notas: r.notas||'', etapa:'agendada', motivoPerdida:null,
-          evidencia:null, creadoEn: nowISO(), actualizadoEn: nowISO(),
-          historial:[{etapa:'agendada', fecha: nowISO(), usuario: currentUser.nombre}]
-        };
-        s.oportunidades.push(op);
-        oportunidadRows.push(oportunidadToRow(op));
       });
     });
     if(prospectoRows.length) supaInsert('prospectos', prospectoRows);
-    if(oportunidadRows.length) supaInsert('oportunidades', oportunidadRows);
     if(prospectoRows.length){
       crearNotificacion(null, 'nuevo_prospecto', 'Se importaron '+prospectoRows.length+' prospectos nuevos.', null);
       var porAsesor = {};
@@ -2939,7 +2946,7 @@ function renderImportarProspectosAsesor(){
   return (
     '<div class="report-card">'+
       '<h2>Importar mis prospectos (CSV)</h2>'+
-      '<div class="sub" style="margin-bottom:10px;">Columnas reconocidas (en cualquier orden): Asesor, Nombres, Apellidos, Teléfono, Correo, Tipo de documento, N.º de documento, Producto, Fecha, Hora, Modalidad, Lugar, Enlace, Notas. Nombres, Apellidos y Teléfono son obligatorios; el resto queda vacío si no se incluye y se puede completar después desde el funnel. Todas las filas se importan a tu nombre ('+escapeHtml(currentUser.nombre)+'), sin importar lo que traiga la columna Asesor. Cada fila crea a la vez el prospecto y su cita ya agendada (a diferencia de la carga manual, que separa ambos pasos).</div>'+
+      '<div class="sub" style="margin-bottom:10px;">Columnas reconocidas (en cualquier orden): Asesor, Nombres, Apellidos, Teléfono, Correo, Tipo de documento, N.º de documento, Producto, Notas. Nombres, Apellidos y Teléfono son obligatorios; el resto queda vacío si no se incluye y se puede completar después desde el funnel. Todas las filas se importan a tu nombre ('+escapeHtml(currentUser.nombre)+'), sin importar lo que traiga la columna Asesor. El CSV solo crea prospectos — el agendamiento de la primera cita se hace después, dentro del sistema, desde la columna "Prospectos" del funnel.</div>'+
       '<div class="filters">'+
         '<button class="btn" id="tpl-leads">Descargar plantilla CSV</button>'+
         '<input type="file" id="file-leads" accept=".csv,text/csv">'+
