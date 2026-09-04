@@ -275,7 +275,7 @@
   .print-header{display:none;}
   @media print{
     @page{ size:landscape; margin:12mm; }
-    #app-stats, header, .banner, .filters, .submit-row, .datalist-note,
+    header, .banner, .filters, .submit-row, .datalist-note,
     .note-edit, .t-notes-empty, .evid-thumb, .no-print, button{ display:none !important; }
     input, select{ border:none !important; background:transparent !important; -webkit-appearance:none; appearance:none;
       padding:0 !important; pointer-events:none; box-shadow:none !important; }
@@ -1849,19 +1849,6 @@ function wireDragAndDrop(){
 }
 
 // ================= RENDER: Reporte =================
-function appStatsHtml(){
-  var today = todayStr();
-  var todayOps = state.oportunidades.filter(function(c){ return c.fecha === today; });
-  var enFunnel = state.oportunidades.filter(function(c){ return c.etapa !== 'perdida' && c.etapa !== 'emitida'; }).length;
-  var emitidasMes = filterByMonthEmitida(state.oportunidades, monthStr(new Date())).length;
-  var perdidas = state.oportunidades.filter(function(c){ return c.etapa==='perdida'; }).length;
-  return '<div class="stats" id="app-stats">'+
-    '<div class="stat"><div class="n">'+todayOps.length+'</div><div class="l">Reuniones hoy</div></div>'+
-    '<div class="stat alt"><div class="n">'+enFunnel+'</div><div class="l">En funnel activo</div></div>'+
-    '<div class="stat alt"><div class="n">'+emitidasMes+'</div><div class="l">Emitidas este mes</div></div>'+
-    '<div class="stat alt"><div class="n">'+perdidas+'</div><div class="l">Perdidas (total)</div></div>'+
-  '</div>';
-}
 function renderReporte(asesoresUnicos){
   var admin = isAdmin();
   if(!admin) reportAsesor = currentUser.nombre;
@@ -1882,7 +1869,6 @@ function renderReporte(asesoresUnicos){
        '<label style="font-size:11px;color:var(--ink-soft);align-self:center;">Hasta</label>'+
        '<input type="month" id="rep-hasta" value="'+reportHasta+'">');
   var controls =
-    (admin ? appStatsHtml() : '')+
     '<div class="filters">'+
       modeToggle+
       periodoControls+
@@ -2077,6 +2063,15 @@ function renderComparativo(asesoresUnicos){
         renderMontoBars(monthlyMontoTrend(state.oportunidades, desde, hasta), {noSort:true})+
       '</div>')
     : '';
+  var teamStageCounts = STAGES.map(function(s){ return {label:s.label, n: countReached(teamCohort, s.key)}; });
+  var teamPerdidas = teamCohort.filter(function(o){ return o.etapa==='perdida'; }).length;
+  var funnelCard =
+    '<div class="report-card">'+
+      '<h2>Funnel del equipo · '+fmtRango(desde,hasta)+'</h2>'+
+      '<div class="sub" style="margin-bottom:4px;">Desde prospectos hasta el cierre o la pérdida, totalizado de todos los asesores</div>'+
+      renderCountBars(funnelRows(totalProspectos, teamStageCounts, teamPerdidas), {noSort:true})+
+      '<div style="font-size:13px;margin-top:10px;"><b>Tasa de conversión (prospectos → emitidas):</b> '+conversionGlobal+'%</div>'+
+    '</div>';
   var panoramaCard =
     '<div class="report-card">'+
       '<h2>Panorama del equipo · '+fmtRango(desde,hasta)+'</h2>'+
@@ -2090,6 +2085,7 @@ function renderComparativo(asesoresUnicos){
     renderMontoBars(rows)+
   '</div>'+
   trendCard+
+  funnelCard+
   panoramaCard+
   '<div class="report-card">'+
     '<h2>Comparativo del equipo · '+fmtRango(desde,hasta)+'</h2>'+
@@ -2389,8 +2385,12 @@ function renderProspectoForm(asesoresUnicos){
       '<form id="prospecto-form">'+
         '<div class="grid2">'+
           '<div class="field"><label for="p-asesor-input">Asesor</label>'+
-            '<input list="asesores-list" id="p-asesor-input" placeholder="Nombre del asesor" value="'+escapeHtml(prospectoForm.asesor)+'" '+(currentUser.rol==='asesor' ? 'disabled' : '')+'>'+
-            '<datalist id="asesores-list">'+asesoresUnicos.map(function(a){ return '<option value="'+escapeHtml(a)+'">'; }).join('')+'</datalist>'+
+            (currentUser.rol==='asesor'
+              ? '<input id="p-asesor-input" value="'+escapeHtml(prospectoForm.asesor)+'" disabled>'
+              : '<select id="p-asesor-input">'+
+                  '<option value="">Selecciona un asesor…</option>'+
+                  asesoresUnicos.map(function(a){ return '<option value="'+escapeHtml(a)+'" '+(prospectoForm.asesor===a?'selected':'')+'>'+escapeHtml(a)+'</option>'; }).join('')+
+                '</select>')+
             (prospectoErrors.asesor ? '<div class="err">'+prospectoErrors.asesor+'</div>' : '')+
           '</div>'+
           '<div class="field"><label for="p-producto">Producto de interés</label>'+
@@ -2505,7 +2505,7 @@ function eliminarProspectosSeleccionados(){
 }
 function wireProspectoFormEvents(asesoresUnicos){
   var form = document.getElementById('prospecto-form');
-  document.getElementById('p-asesor-input').oninput = function(e){ prospectoForm.asesor = e.target.value; };
+  document.getElementById('p-asesor-input').onchange = function(e){ prospectoForm.asesor = e.target.value; };
   document.getElementById('p-producto').onchange = function(e){ prospectoForm.producto = e.target.value; };
   document.getElementById('p-nombres').oninput = function(e){ prospectoForm.clienteNombres = e.target.value; };
   document.getElementById('p-apellidos').oninput = function(e){ prospectoForm.clienteApellidos = e.target.value; };
@@ -2517,7 +2517,7 @@ function wireProspectoFormEvents(asesoresUnicos){
   form.onsubmit = function(e){
     e.preventDefault();
     prospectoErrors = {};
-    if(!prospectoForm.asesor.trim()) prospectoErrors.asesor = 'Ingresa el nombre del asesor.';
+    if(!prospectoForm.asesor.trim()) prospectoErrors.asesor = 'Selecciona un asesor.';
     if(!prospectoForm.clienteNombres.trim()) prospectoErrors.clienteNombres = 'Ingresa los nombres.';
     if(!prospectoForm.clienteApellidos.trim()) prospectoErrors.clienteApellidos = 'Ingresa los apellidos.';
     if(!prospectoForm.telefono.trim()) prospectoErrors.telefono = 'Ingresa el teléfono.';
@@ -2781,7 +2781,7 @@ function renderImportar(asesoresUnicos){
     if(!u.pendiente) acciones += '<button class="btn" data-reset-pass="'+u.id+'">Restablecer contraseña</button> ';
     if(!(esYo && soloAdmin)) acciones += '<button class="btn danger" data-del-user="'+u.id+'">Eliminar</button>';
     var checkCell = esYo ? '<td></td>' : '<td><input type="checkbox" data-usuario-check="'+u.id+'" '+(usuarioSeleccionados[u.id]?'checked':'')+'></td>';
-    return '<tr>'+checkCell+'<td>'+escapeHtml(u.nombre)+(esYo?' <span class="pill">tú</span>':'')+'</td>'+
+    return '<tr>'+checkCell+'<td>'+escapeHtml(u.nombre)+(esYo?' <span class="pill">tú</span>':'')+' <span class="note-edit" data-edit-nombre="'+u.id+'">editar</span>'+'</td>'+
       '<td>'+escapeHtml(u.email||'—')+'</td>'+
       '<td>'+escapeHtml(u.telefono||'—')+'</td>'+
       '<td>'+roleSelect+'</td>'+
@@ -2839,6 +2839,52 @@ function eliminarUsuariosSeleccionados(){
   mutate(function(s){ s.usuarios = s.usuarios.filter(function(u){ return ids.indexOf(u.id) === -1; }); });
   ids.forEach(function(id){ supaDelete('usuarios', id); });
   usuarioSeleccionados = {};
+  render();
+}
+function renombrarAsesor(usuarioId){
+  if(!isAdmin()) return;
+  var u = findUsuarioById(usuarioId);
+  if(!u) return;
+  var nuevoNombre = window.prompt('Nombre y apellido de '+u.nombre+':', u.nombre);
+  if(nuevoNombre === null) return;
+  nuevoNombre = nuevoNombre.trim();
+  if(!nuevoNombre || nuevoNombre === u.nombre) return;
+  // Evita fusionar sin querer los datos de dos personas distintas si ya existe
+  // otro miembro del equipo con ese nombre exacto.
+  var choque = state.usuarios.some(function(x){ return x.id !== u.id && x.nombre === nuevoNombre; });
+  if(choque){ alert('Ya existe otra persona del equipo con ese nombre exacto. Elige un nombre distinto, o corrige/elimina la otra cuenta primero.'); return; }
+  var viejoNombre = u.nombre;
+  // El nombre es el identificador que conecta a la persona con sus prospectos,
+  // citas, notificaciones y metas ya guardadas -- al renombrarla, todo eso se
+  // actualiza también para que no quede huérfano bajo el nombre anterior.
+  var prospectosAfectados = state.prospectos.filter(function(p){ return p.asesor === viejoNombre; });
+  var opsAfectadas = state.oportunidades.filter(function(o){ return o.asesor === viejoNombre; });
+  var notifsAfectadas = state.notificaciones.filter(function(n){ return n.destinatarioAsesor === viejoNombre; });
+  var metaViejo = state.metas[viejoNombre];
+  mutate(function(s){
+    u.nombre = nuevoNombre;
+    prospectosAfectados.forEach(function(p){ p.asesor = nuevoNombre; });
+    opsAfectadas.forEach(function(o){ o.asesor = nuevoNombre; });
+    notifsAfectadas.forEach(function(n){ n.destinatarioAsesor = nuevoNombre; });
+    if(metaViejo){
+      if(!s.metas[nuevoNombre]) s.metas[nuevoNombre] = {};
+      Object.keys(metaViejo).forEach(function(mes){
+        if(!s.metas[nuevoNombre][mes]) s.metas[nuevoNombre][mes] = metaViejo[mes];
+      });
+      delete s.metas[viejoNombre];
+    }
+  });
+  supaUpdate('usuarios', u.id, usuarioToRow(u));
+  prospectosAfectados.forEach(function(p){ supaUpdate('prospectos', p.id, prospectoToRow(p)); });
+  opsAfectadas.forEach(function(o){ supaUpdate('oportunidades', o.id, oportunidadToRow(o)); });
+  notifsAfectadas.forEach(function(n){ supaUpdate('notificaciones', n.id, notificacionToRow(n)); });
+  if(metaViejo){
+    Object.keys(metaViejo).forEach(function(mes){
+      var m = state.metas[nuevoNombre][mes];
+      supaUpsertMeta({asesor:nuevoNombre, mes:mes, citas_meta:m.citasMeta, cierres_meta:m.cierresMeta, monto_meta:m.montoMeta});
+    });
+  }
+  if(currentUser && currentUser.id === u.id) currentUser.nombre = nuevoNombre;
   render();
 }
 function renderLeadsPreview(){
@@ -3116,6 +3162,9 @@ function wireImportarEvents(asesoresUnicos){
   });
   document.querySelectorAll('[data-reset-pass]').forEach(function(btn){
     btn.onclick = function(){ adminResetPassword(btn.dataset.resetPass); };
+  });
+  document.querySelectorAll('[data-edit-nombre]').forEach(function(el){
+    el.onclick = function(){ renombrarAsesor(el.dataset.editNombre); };
   });
   document.querySelectorAll('[data-del-user]').forEach(function(btn){
     btn.onclick = function(){
