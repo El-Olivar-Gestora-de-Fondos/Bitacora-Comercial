@@ -451,8 +451,42 @@ function defaultAgendarForm(){
     prospectoId:'', modalidad:'Presencial', fecha: todayStr(), hora:'', lugar:'', meetLink:'', notas:''
   };
 }
+// Abre el formulario de "Agendar cita" para un prospecto. Si ya tiene una
+// reunión activa (no perdida ni emitida), la precarga con sus datos actuales
+// -- así reprogramar una cita significa ver lo ya agendado y solo cambiar lo
+// que haga falta (la fecha, la hora, el lugar...), en vez de volver a escribir
+// todo desde cero. Las notas se dejan en blanco a propósito: lo que se
+// escriba ahí se AGREGA a las notas existentes, no las reemplaza.
+function agendarFormParaProspecto(prospectoId){
+  var form = defaultAgendarForm();
+  form.prospectoId = prospectoId;
+  var activas = citasDeProspecto(prospectoId).filter(function(o){ return o.etapa!=='perdida' && o.etapa!=='emitida'; });
+  activas.sort(function(a,b){ return new Date(b.actualizadoEn||b.creadoEn||0) - new Date(a.actualizadoEn||a.creadoEn||0); });
+  var activa = activas[0] || null;
+  if(activa){
+    form.modalidad = activa.modalidad || 'Presencial';
+    form.fecha = activa.fecha || form.fecha;
+    form.hora = activa.hora || '';
+    form.lugar = activa.lugar || '';
+    form.meetLink = activa.meetLink || '';
+  }
+  return form;
+}
 function defaultAuthForm(){
   return { nombre:'', email:'', telefono:'', password:'', password2:'' };
+}
+// Botón "Reprogramar" en un ticket/tarjeta de oportunidad: abre "Agendar cita"
+// ya precargado con la fecha/hora/lugar actuales de esa reunión, lista para
+// editar. Al enviarse, wireAgendarFormEvents reconoce que el prospecto ya
+// tiene una reunión activa y actualiza esa misma oportunidad en vez de crear
+// una nueva.
+function reprogramarDesdeOportunidad(opId){
+  var op = state.oportunidades.filter(function(o){ return o.id===opId; })[0];
+  if(!op || !canReprogramar(op)) return;
+  agendarForm = agendarFormParaProspecto(op.prospectoId);
+  agendarErrors = {};
+  view = 'agendar';
+  render();
 }
 
 // ---------- small utils ----------
@@ -854,14 +888,18 @@ async function adminResetPassword(userId){
   alert('Se envió un correo a '+u.email+' con instrucciones para restablecer su contraseña.');
 }
 function canEditOportunidad(op){
-  return !!currentUser && (currentUser.rol === 'admin' || op.asesor === currentUser.nombre);
+  return !!currentUser && currentUser.rol !== 'visualizador' && (currentUser.rol === 'admin' || op.asesor === currentUser.nombre);
+}
+function canReprogramar(op){
+  return canEditOportunidad(op) && !!op.prospectoId && op.etapa!=='perdida' && op.etapa!=='emitida';
 }
 function isAdmin(){ return !!currentUser && currentUser.rol === 'admin'; }
 // El rol "visualizador" ve todo (como el admin, sin el filtro de "solo lo mío"
 // que aplica a los asesores) pero nunca puede crear, editar ni eliminar nada
-// -- eso ya queda cubierto en canEditProspecto/canEditOportunidad, que solo
-// comparan por 'admin' o por nombre de asesor y por lo tanto excluyen a un
-// visualizador automáticamente, sin necesidad de tocarlas.
+// -- canEditProspecto/canEditOportunidad excluyen explícitamente el rol
+// 'visualizador', para que ni siquiera un caso límite (por ejemplo, alguien
+// cuyo nombre coincide con el "asesor" de un registro antiguo, tras haber
+// sido cambiado a visualizador) pueda editar por la comparación de nombre.
 function isViewer(){ return !!currentUser && currentUser.rol === 'visualizador'; }
 function canViewAll(){ return isAdmin() || isViewer(); }
 function uniqueAsesores(){
@@ -872,7 +910,7 @@ function uniqueAsesores(){
 }
 function findProspectoById(id){ return state.prospectos.filter(function(p){ return p.id===id; })[0] || null; }
 function canEditProspecto(p){
-  return !!currentUser && (currentUser.rol === 'admin' || p.asesor === currentUser.nombre);
+  return !!currentUser && currentUser.rol !== 'visualizador' && (currentUser.rol === 'admin' || p.asesor === currentUser.nombre);
 }
 function citasDeProspecto(prospectoId){
   return state.oportunidades.filter(function(o){ return o.prospectoId === prospectoId; });
@@ -1234,8 +1272,7 @@ function wireNotifBell(){
   if(markAll) markAll.onclick = function(e){ e.stopPropagation(); marcarTodasLeidas(); render(); };
   document.querySelectorAll('[data-agendar-desde-notif]').forEach(function(el){
     el.onclick = function(){
-      agendarForm = defaultAgendarForm();
-      agendarForm.prospectoId = el.dataset.agendarDesdeNotif;
+      agendarForm = agendarFormParaProspecto(el.dataset.agendarDesdeNotif);
       notifPanelOpen = false;
       view = 'agendar';
       render();
@@ -1530,8 +1567,9 @@ function renderTicket(op, showAsesor){
     : (editable ? '<button class="btn" data-evid="'+op.id+'">Adjuntar evidencia</button>' : '<span style="font-size:12px;color:var(--ink-soft);">Sin evidencia</span>');
   var motivo = (op.etapa==='perdida' && op.motivoPerdida) ? '<div style="font-size:11.5px;color:var(--red);margin-top:4px;">Motivo: '+escapeHtml(op.motivoPerdida)+'</div>' : '';
   var actions = '';
+  var reprogBtn = canReprogramar(op) ? ' <button class="btn" data-reprogramar="'+op.id+'">Reprogramar</button>' : '';
   if(editable){
-    actions = stageSelectHtml(op)+evid+' <button class="btn danger" data-del-op="'+op.id+'">Eliminar</button>';
+    actions = stageSelectHtml(op)+evid+reprogBtn+' <button class="btn danger" data-del-op="'+op.id+'">Eliminar</button>';
   } else {
     actions = stageBadge+' '+evid;
   }
@@ -1564,6 +1602,7 @@ function renderKCard(op, showAsesor){
     ? '<img class="evid-thumb" src="'+op.evidencia+'" data-view-evid="'+op.id+'" style="width:30px;height:30px;">'
     : '';
   var evidBtn = editable ? '<button class="btn" data-evid="'+op.id+'">'+(op.evidencia?'Cambiar':'Adjuntar')+' evidencia</button>' : '';
+  var reprogBtn = canReprogramar(op) ? ' <button class="btn" data-reprogramar="'+op.id+'">Reprogramar</button>' : '';
   var motivo = (op.etapa==='perdida' && op.motivoPerdida) ? '<div class="kc-meta" style="color:var(--red);">Motivo: '+escapeHtml(op.motivoPerdida)+'</div>' : '';
   return (
     '<div class="kcard'+(editable?' kcard-drag':'')+'" '+(editable?'draggable="true" data-drag-op="'+op.id+'"':'')+'>'+
@@ -1576,7 +1615,7 @@ function renderKCard(op, showAsesor){
       contactLine(op)+
       montoBlock(op, editable)+
       notesBlock(op, editable, '')+
-      '<div class="kc-actions">'+evid+evidBtn+(editable?' <button class="btn danger" data-del-op="'+op.id+'">Eliminar</button>':'')+'</div>'+
+      '<div class="kc-actions">'+evid+evidBtn+reprogBtn+(editable?' <button class="btn danger" data-del-op="'+op.id+'">Eliminar</button>':'')+'</div>'+
     '</div>'
   );
 }
@@ -1693,6 +1732,7 @@ function wireCommonOpEvents(){
   document.querySelectorAll('[data-edit-monto]').forEach(function(el){ el.onclick = function(){ editMonto(el.dataset.editMonto); }; });
   document.querySelectorAll('[data-del-op]').forEach(function(el){ el.onclick = function(){ deleteOp(el.dataset.delOp); }; });
   document.querySelectorAll('[data-evid]').forEach(function(el){ el.onclick = function(){ attachEvidence(el.dataset.evid); }; });
+  document.querySelectorAll('[data-reprogramar]').forEach(function(el){ el.onclick = function(){ reprogramarDesdeOportunidad(el.dataset.reprogramar); }; });
   document.querySelectorAll('[data-view-evid]').forEach(function(img){
     img.onclick = function(){
       evidenceModal = state.oportunidades.filter(function(o){ return o.id===img.dataset.viewEvid; })[0];
@@ -1874,8 +1914,7 @@ function wireFunnelEvents(asesoresUnicos){
   if(kProducto) kProducto.onchange = function(e){ kanbanProducto = e.target.value; render(); };
   document.querySelectorAll('[data-agendar-prospecto-kanban]').forEach(function(btn){
     btn.onclick = function(){
-      agendarForm = defaultAgendarForm();
-      agendarForm.prospectoId = btn.dataset.agendarProspectoKanban;
+      agendarForm = agendarFormParaProspecto(btn.dataset.agendarProspectoKanban);
       view = 'agendar';
       render();
     };
@@ -1933,8 +1972,7 @@ function wireDragAndDrop(){
         // tarjeta, así que se abre el formulario de "Agendar cita".
         var p = findProspectoById(payload.id);
         if(!p || !canEditProspecto(p)) return;
-        agendarForm = defaultAgendarForm();
-        agendarForm.prospectoId = payload.id;
+        agendarForm = agendarFormParaProspecto(payload.id);
         view = 'agendar';
         render();
       }
@@ -2695,8 +2733,7 @@ function wireProspectoFormEvents(asesoresUnicos){
   }
   document.querySelectorAll('[data-agendar-prospecto]').forEach(function(btn){
     btn.onclick = function(){
-      agendarForm = defaultAgendarForm();
-      agendarForm.prospectoId = btn.dataset.agendarProspecto;
+      agendarForm = agendarFormParaProspecto(btn.dataset.agendarProspecto);
       view = 'agendar';
       render();
     };
