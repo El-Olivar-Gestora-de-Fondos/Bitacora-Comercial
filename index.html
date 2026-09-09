@@ -1655,6 +1655,30 @@ function parseMontoInput(raw){
   if(isNaN(n) || n < 0) return null;
   return Math.round(n * 100) / 100;
 }
+// Si se cambia a una etapa ANTERIOR a la más avanzada que ya registraba el
+// historial (por ejemplo: por error la avanzaron a "Oportunidades" y ahora la
+// regresan a "Presentaciones" para corregirlo), o si se reactiva una
+// oportunidad que estaba "Perdida", este helper depura del historial las
+// etapas que ya no aplican. Sin esto, el funnel seguiría contando para
+// siempre que "alcanzó Oportunidades" (o que está perdida) aunque ya no sea
+// cierto, porque reachedStage() mira el historial completo, no solo la
+// etapa actual.
+function depurarHistorialSiRetrocede(op, newVal){
+  var newIdx = STAGE_KEYS.indexOf(newVal);
+  if(newIdx === -1) return;
+  var maxIdx = -1;
+  op.historial.forEach(function(h){
+    var idx = STAGE_KEYS.indexOf(h.etapa);
+    if(idx > maxIdx) maxIdx = idx;
+  });
+  var teniaPerdida = op.historial.some(function(h){ return h.etapa === 'perdida'; });
+  if(newIdx < maxIdx || teniaPerdida){
+    op.historial = op.historial.filter(function(h){
+      var idx = STAGE_KEYS.indexOf(h.etapa);
+      return idx !== -1 && idx <= newIdx;
+    });
+  }
+}
 function onEtapaChange(id, newVal){
   var op = state.oportunidades.filter(function(o){ return o.id===id; })[0];
   if(!op || !canEditOportunidad(op)) return;
@@ -1675,6 +1699,7 @@ function onEtapaChange(id, newVal){
     if(raw === null){ render(); return; }
     var monto = parseMontoInput(raw);
     mutate(function(){
+      depurarHistorialSiRetrocede(op, 'emitida');
       op.monto = monto!=null ? monto : (op.monto!=null ? op.monto : 0);
       op.motivoPerdida = null;
       op.etapa = 'emitida';
@@ -1685,6 +1710,7 @@ function onEtapaChange(id, newVal){
     return;
   }
   mutate(function(){
+    depurarHistorialSiRetrocede(op, newVal);
     op.motivoPerdida = null;
     op.etapa = newVal;
     op.actualizadoEn = nowISO();
