@@ -303,6 +303,7 @@
   .contact-line a{color:var(--ink-soft);text-decoration:none;}
   .contact-line a:hover{text-decoration:underline;}
   .t-monto{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--green);font-size:12.5px;margin-top:4px;}
+  .t-monto-probable{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--amber);font-size:12.5px;margin-top:4px;}
   .bars{display:flex;flex-direction:column;gap:7px;margin:14px 0;}
   .bar-row{display:grid;grid-template-columns:130px 1fr 92px;align-items:center;gap:10px;font-size:12px;}
   .bar-label{color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -579,6 +580,7 @@ function normalizeState(raw){
     if(!op.numeroDocumento) op.numeroDocumento = '';
     if(op.prospectoId === undefined) op.prospectoId = null;
     if(typeof op.monto !== 'number' || isNaN(op.monto)) op.monto = null;
+    if(typeof op.montoProbable !== 'number' || isNaN(op.montoProbable)) op.montoProbable = null;
   });
   // migrate pre-prospecto data (schema v3 and earlier): synthesize one prospecto
   // per existing oportunidad so older citas keep a linked prospect record.
@@ -662,6 +664,7 @@ function oportunidadFromRow(r){
     producto:r.producto||'Bono Corporativo', lugar:r.lugar||'', fecha:r.fecha||'', hora:r.hora||'', modalidad:r.modalidad||'Presencial',
     meetLink:r.meet_link||'', notas:r.notas||'', etapa:r.etapa||'agendada', motivoPerdida:r.motivo_perdida||null,
     evidencia:r.evidencia||null, monto:(r.monto===null||r.monto===undefined)?null:Number(r.monto),
+    montoProbable:(r.monto_probable===null||r.monto_probable===undefined)?null:Number(r.monto_probable),
     historial:Array.isArray(r.historial)?r.historial:[], creadoEn:r.creado_en, actualizadoEn:r.actualizado_en
   };
 }
@@ -672,6 +675,7 @@ function oportunidadToRow(op){
     producto:op.producto||'Bono Corporativo', lugar:op.lugar||'', fecha:op.fecha||null, hora:op.hora||'', modalidad:op.modalidad||'Presencial',
     meet_link:op.meetLink||'', notas:op.notas||'', etapa:op.etapa||'agendada', motivo_perdida:op.motivoPerdida||null,
     evidencia:op.evidencia||null, monto:(op.monto===null||op.monto===undefined)?null:op.monto,
+    monto_probable:(op.montoProbable===null||op.montoProbable===undefined)?null:op.montoProbable,
     historial:Array.isArray(op.historial)?op.historial:[], actualizado_en:nowISO()
   };
 }
@@ -1568,6 +1572,15 @@ function montoBlock(op, editable){
   return '<div class="t-monto">'+fmtUSD(op.monto)+
     (editable ? ' <span class="note-edit" data-edit-monto="'+op.id+'">editar</span>' : '')+'</div>';
 }
+// Monto probable de cierre: un estimado editable mientras la oportunidad está
+// "en juego" (Oportunidades o Compromisos) -- una vez se marca Cierres, el
+// monto real (montoBlock, arriba) es el que manda y este campo deja de mostrarse.
+function montoProbableBlock(op, editable){
+  if(op.etapa !== 'gestion' && op.etapa !== 'acres') return '';
+  if(!editable && op.montoProbable == null) return '';
+  return '<div class="t-monto-probable">Monto probable: '+fmtUSD(op.montoProbable)+
+    (editable ? ' <span class="note-edit" data-edit-montoprobable="'+op.id+'">editar</span>' : '')+'</div>';
+}
 function renderTicket(op, showAsesor){
   var prodBadge = op.producto === 'Bono Corporativo' ? '<span class="badge b-bono">Bono corporativo</span>' : '<span class="badge b-fondo">Fondo de inversión</span>';
   var editable = canEditOportunidad(op);
@@ -1598,6 +1611,7 @@ function renderTicket(op, showAsesor){
         '<div class="t-meta">'+meetOrLugarBlock(op, editable)+'</div>'+
         contactLine(op)+
         montoBlock(op, editable)+
+        montoProbableBlock(op, editable)+
         motivo+
         notesBlock(op, editable)+
         '<div class="t-actions">'+actions+'</div>'+
@@ -1625,6 +1639,7 @@ function renderKCard(op, showAsesor){
       '<div class="kc-meta">'+meetOrLugarBlock(op, editable)+'</div>'+
       contactLine(op)+
       montoBlock(op, editable)+
+      montoProbableBlock(op, editable)+
       notesBlock(op, editable, '')+
       '<div class="kc-actions">'+evid+evidBtn+reprogBtn+(editable?' <button class="btn danger" data-del-op="'+op.id+'">Eliminar</button>':'')+'</div>'+
     '</div>'
@@ -1711,6 +1726,17 @@ function editMonto(id){
   mutate(function(){ op.monto = monto; op.actualizadoEn = nowISO(); });
   supaUpdate('oportunidades', op.id, oportunidadToRow(op));
 }
+function editMontoProbable(id){
+  var op = state.oportunidades.filter(function(o){ return o.id===id; })[0];
+  if(!op || !canEditOportunidad(op)) return;
+  if(op.etapa!=='gestion' && op.etapa!=='acres') return;
+  var raw = window.prompt('Monto probable de cierre en USD (estimado):', op.montoProbable!=null ? String(op.montoProbable) : '');
+  if(raw === null) return;
+  var monto = parseMontoInput(raw);
+  if(monto === null) return;
+  mutate(function(){ op.montoProbable = monto; op.actualizadoEn = nowISO(); });
+  supaUpdate('oportunidades', op.id, oportunidadToRow(op));
+}
 function deleteOp(id){
   var op = state.oportunidades.filter(function(o){ return o.id===id; })[0];
   if(!op || !canEditOportunidad(op)) return;
@@ -1741,6 +1767,7 @@ function wireCommonOpEvents(){
   document.querySelectorAll('[data-edit-meet]').forEach(function(el){ el.onclick = function(){ editMeet(el.dataset.editMeet); }; });
   document.querySelectorAll('[data-edit-lugar]').forEach(function(el){ el.onclick = function(){ editLugar(el.dataset.editLugar); }; });
   document.querySelectorAll('[data-edit-monto]').forEach(function(el){ el.onclick = function(){ editMonto(el.dataset.editMonto); }; });
+  document.querySelectorAll('[data-edit-montoprobable]').forEach(function(el){ el.onclick = function(){ editMontoProbable(el.dataset.editMontoprobable); }; });
   document.querySelectorAll('[data-del-op]').forEach(function(el){ el.onclick = function(){ deleteOp(el.dataset.delOp); }; });
   document.querySelectorAll('[data-evid]').forEach(function(el){ el.onclick = function(){ attachEvidence(el.dataset.evid); }; });
   document.querySelectorAll('[data-reprogramar]').forEach(function(el){ el.onclick = function(){ reprogramarDesdeOportunidad(el.dataset.reprogramar); }; });
@@ -2172,6 +2199,53 @@ function metaProgressBar(valor, meta){
   return '<div class="progress"><div class="progress-bar '+cls+'" style="width:'+clamp(pct,0,100)+'%"></div></div>'+
     '<div style="font-size:11.5px;color:var(--ink-soft);">'+valor+' / '+meta+' ('+pct+'%)</div>';
 }
+// Igual que metaProgressBar, pero formateando ambos valores como montos en USD
+// -- para el recaudo (dinero) en vez de conteos (citas, cierres).
+function metaProgressBarUSD(valor, meta){
+  if(!meta){ return '<div style="font-size:11.5px;color:var(--ink-soft);">Sin meta definida para este mes</div>'; }
+  var pct = clamp(Math.round(valor/meta*100), 0, 999);
+  var cls = pct>=100 ? 'ok' : (pct>=60 ? '' : 'warn');
+  return '<div class="progress"><div class="progress-bar '+cls+'" style="width:'+clamp(pct,0,100)+'%"></div></div>'+
+    '<div style="font-size:11.5px;color:var(--ink-soft);">'+fmtUSD(valor)+' / '+fmtUSD(meta)+' ('+pct+'%)</div>';
+}
+// Meta de monto del equipo para un mes: la suma de la meta de monto de cada
+// asesor para ese mes (las metas se definen por asesor y por mes).
+function teamMontoMetaEnMes(mes, asesoresUnicos){
+  return asesoresUnicos.reduce(function(sum, a){
+    var meta = state.metas[a] && state.metas[a][mes];
+    return sum + (meta ? (meta.montoMeta||0) : 0);
+  }, 0);
+}
+// Reporte "Recaudo vs. meta mensual": para cada mes del periodo elegido,
+// compara el monto recaudado (oportunidades que llegaron a Cierres ese mes)
+// contra la meta de monto total del equipo, para ver de un vistazo si se
+// están cumpliendo las metas mes a mes. Solo visible para admin/visualizador,
+// ya que renderComparativo (quien la muestra) ya está restringido a canViewAll().
+function renderRecaudoVsMetaCard(asesoresUnicos, desde, hasta){
+  var meses = mesesEnRango(desde, hasta);
+  if(!meses.length) return '';
+  var rows = meses.map(function(m){
+    return {
+      label: fmtMes(m),
+      recaudo: montoEnRango(state.oportunidades, m, m),
+      meta: teamMontoMetaEnMes(m, asesoresUnicos)
+    };
+  });
+  var sinMetaCount = rows.filter(function(r){ return !r.meta; }).length;
+  var body = rows.map(function(r){
+    return '<div style="margin-bottom:14px;">'+
+      '<div style="font-size:12.5px;font-weight:500;margin-bottom:3px;text-transform:capitalize;">'+escapeHtml(r.label)+'</div>'+
+      metaProgressBarUSD(r.recaudo, r.meta)+
+    '</div>';
+  }).join('');
+  return '<div class="report-card">'+
+    '<h2>Recaudo vs. meta mensual</h2>'+
+    '<div class="sub" style="margin-bottom:10px;">Monto recaudado (oportunidades que llegaron a Cierres) frente a la meta de monto de todo el equipo, mes a mes.'+
+      (sinMetaCount ? ' '+sinMetaCount+' de '+rows.length+' mes(es) todavía no tiene(n) meta de monto definida.' : '')+
+    '</div>'+
+    body+
+  '</div>';
+}
 function renderComparativo(asesoresUnicos){
   var desde = reportDesde, hasta = reportHasta;
   var mismoMes = !!desde && desde === hasta;
@@ -2261,12 +2335,14 @@ function renderComparativo(asesoresUnicos){
       '<div class="sub" style="margin-bottom:4px;">Motivos de pérdida más frecuentes</div>'+
       (teamCohort.some(function(o){ return o.etapa==='perdida'; }) ? renderCountBars(topMotivosPerdida(teamCohort, 5)) : '<div class="sub">Sin oportunidades perdidas en este periodo.</div>')+
     '</div>';
+  var recaudoCard = renderRecaudoVsMetaCard(asesoresUnicos, desde, hasta);
   return '<div class="report-card">'+
     '<h2>Dashboard del equipo · '+fmtRango(desde,hasta)+'</h2>'+
     kpis+
     '<div class="sub" style="margin-top:14px;margin-bottom:4px;">Monto emitido por asesor (USD)</div>'+
     renderMontoBars(rows)+
   '</div>'+
+  recaudoCard+
   trendCard+
   funnelCard+
   panoramaCard+
@@ -2516,6 +2592,7 @@ function prospectoFunnelRow(p){
   var ultima = citas[0] || null;
   var etapa = ultima ? stageLabel(ultima.etapa) : prospectoEstadoLabel(p.estado||'nuevo');
   var monto = (ultima && ultima.etapa==='emitida' && typeof ultima.monto==='number') ? ultima.monto : '';
+  var montoProbable = (ultima && (ultima.etapa==='gestion'||ultima.etapa==='acres') && typeof ultima.montoProbable==='number') ? ultima.montoProbable : '';
   return {
     'Asesor': p.asesor || '',
     'Nombres': p.clienteNombres || '',
@@ -2530,6 +2607,7 @@ function prospectoFunnelRow(p){
     'Fecha última cita': ultima ? (ultima.fecha || '') : '',
     'Hora última cita': ultima ? (ultima.hora || '') : '',
     'Monto emitido': monto,
+    'Monto probable': montoProbable,
     'Notas': p.notas || '',
     'Creado': (p.creadoEn || '').slice(0, 10)
   };
@@ -2545,7 +2623,7 @@ function exportProspectosExcel(){
   var ws = XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = [
     {wch:18},{wch:16},{wch:16},{wch:14},{wch:24},{wch:16},{wch:16},
-    {wch:18},{wch:20},{wch:10},{wch:14},{wch:10},{wch:12},{wch:30},{wch:12}
+    {wch:18},{wch:20},{wch:10},{wch:14},{wch:10},{wch:12},{wch:12},{wch:30},{wch:12}
   ];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Prospectos');
