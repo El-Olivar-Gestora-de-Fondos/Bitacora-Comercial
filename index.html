@@ -1679,6 +1679,31 @@ function depurarHistorialSiRetrocede(op, newVal){
     });
   }
 }
+// Repara de una sola vez el historial de TODAS las oportunidades que ya
+// quedó "contaminado" por correcciones hechas antes de que existiera
+// depurarHistorialSiRetrocede (por ejemplo: la movieron por error a
+// "Oportunidades" y luego la regresaron a "Presentaciones", pero el
+// historial viejo seguía teniendo la entrada "gestion" y el funnel la
+// sigue contando ahí para siempre). Solo administradores pueden ejecutarlo.
+function repararHistorialTodasLasOportunidades(){
+  if(!isAdmin()) return;
+  if(!window.confirm('Esto va a revisar el historial de todas las oportunidades y quitar etapas que ya no aplican (por correcciones antiguas de etapa). No borra ni cambia la etapa actual de ninguna oportunidad. ¿Continuar?')) return;
+  var afectadas = [];
+  mutate(function(){
+    state.oportunidades.forEach(function(op){
+      var idxActual = STAGE_KEYS.indexOf(op.etapa);
+      if(idxActual === -1) return; // etapa actual "perdida": no se toca aquí
+      var antes = op.historial.length;
+      op.historial = op.historial.filter(function(h){
+        var idx = STAGE_KEYS.indexOf(h.etapa);
+        return idx !== -1 && idx <= idxActual;
+      });
+      if(op.historial.length !== antes) afectadas.push(op);
+    });
+  });
+  afectadas.forEach(function(op){ supaUpdate('oportunidades', op.id, oportunidadToRow(op)); });
+  window.alert(afectadas.length ? (afectadas.length+' oportunidad(es) corregida(s).') : 'No se encontró ninguna oportunidad que necesitara corrección.');
+}
 function onEtapaChange(id, newVal){
   var op = state.oportunidades.filter(function(o){ return o.id===id; })[0];
   if(!op || !canEditOportunidad(op)) return;
@@ -2359,6 +2384,7 @@ function renderComparativo(asesoresUnicos){
       '<div class="sub" style="margin-bottom:4px;">Desde prospectos hasta el cierre o la pérdida, totalizado de todos los asesores</div>'+
       renderCountBars(funnelRows(totalProspectos, teamContactados, teamCalificados, teamStageCounts, teamPerdidas), {noSort:true, showPercent:true})+
       '<div style="font-size:13px;margin-top:10px;"><b>Tasa de conversión (prospectos → emitidas):</b> '+conversionGlobal+'%</div>'+
+      (isAdmin() ? '<div style="margin-top:10px;"><button class="btn" id="rep-reparar-historial" title="Corrige oportunidades cuyo historial quedó con etapas que ya no aplican por correcciones antiguas (ej. la movieron por error y luego la regresaron)">Reparar historial de etapas</button></div>' : '')+
     '</div>';
   var panoramaCard =
     '<div class="report-card">'+
@@ -2525,6 +2551,9 @@ function wireReporteEvents(asesoresUnicos){
   };
   if(repAlltime) repAlltime.onclick = function(){ reportDesde = ''; reportHasta = ''; render(); };
   if(repAsesor) repAsesor.onchange = function(e){ reportAsesor = e.target.value; render(); };
+
+  var repRepararHistorial = document.getElementById('rep-reparar-historial');
+  if(repRepararHistorial) repRepararHistorial.onclick = function(){ repararHistorialTodasLasOportunidades(); };
 
   var repExportPdf = document.getElementById('rep-export-pdf');
   if(repExportPdf) repExportPdf.onclick = function(){
