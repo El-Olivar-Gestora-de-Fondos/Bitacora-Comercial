@@ -276,8 +276,49 @@
     font-weight:500;color:var(--ink-soft);cursor:pointer;}
   .view-toggle button.active{background:var(--card);color:var(--navy);box-shadow:0 1px 2px rgba(0,0,0,.08);}
   .print-header{display:none;}
+  /* Simulador de inversión: plantilla con identidad de El Olivar (logo + azul
+     marino + acento dorado), inspirada en un cronograma visual de referencia.
+     Se imprime en vertical (a diferencia de Reportes, que usa horizontal) --
+     por eso usa una página con nombre distinto ("sim-portrait") seleccionada
+     solo en este contenedor mediante la propiedad CSS "page". */
+  .sim-pdf-page{ page:sim-portrait; background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:16px; }
+  .sim-pdf-header{ background:var(--navy); color:#fff; border-radius:12px; padding:18px 20px; display:flex; align-items:center; gap:16px; margin-bottom:18px; }
+  .sim-pdf-header img{ height:42px; width:auto; flex-shrink:0; filter:brightness(0) invert(1); }
+  .sim-pdf-header h1{ margin:0 0 3px; font-size:17px; letter-spacing:.02em; text-transform:uppercase; font-family:'Inter',sans-serif; color:#fff; }
+  .sim-pdf-header .sim-pdf-sub{ font-size:11.5px; opacity:.85; }
+  .sim-pdf-section-title{ font-size:12px; font-weight:700; color:var(--navy); text-transform:uppercase; letter-spacing:.04em; margin:18px 0 10px; }
+  .sim-pdf-cards{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:4px; }
+  .sim-pdf-card{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; break-inside:avoid; }
+  .sim-pdf-card .l{ font-size:10px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px; }
+  .sim-pdf-card .v{ font-size:18px; font-weight:700; color:var(--navy); font-family:'JetBrains Mono',monospace; }
+  .sim-pdf-card .v.accent{ color:var(--amber); }
+  .sim-pdf-card .d{ font-size:10.5px; color:var(--ink-soft); margin-top:3px; }
+  .sim-pdf-timeline{ display:flex; align-items:flex-start; margin:16px 0 20px; position:relative; break-inside:avoid; }
+  .sim-pdf-timeline::before{ content:''; position:absolute; top:6px; left:6%; right:6%; height:2px; background:var(--amber); z-index:0; }
+  .sim-pdf-tl-item{ position:relative; z-index:1; text-align:center; flex:1; }
+  .sim-pdf-tl-dot{ width:12px; height:12px; border-radius:50%; background:var(--navy); margin:0 auto 7px; border:2px solid var(--paper); }
+  .sim-pdf-tl-item.final .sim-pdf-tl-dot{ background:var(--amber); }
+  .sim-pdf-tl-label{ font-size:9.5px; font-weight:700; text-transform:uppercase; color:var(--ink); letter-spacing:.02em; }
+  .sim-pdf-tl-item.final .sim-pdf-tl-label{ color:var(--amber); }
+  .sim-pdf-tl-date{ font-size:9.5px; color:var(--ink-soft); margin-top:2px; }
+  .sim-pdf-highlight{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:4px; }
+  .sim-pdf-hi-box{ border-radius:10px; padding:14px; break-inside:avoid; }
+  .sim-pdf-hi-box.periodic{ background:var(--card); border:1px solid var(--line); }
+  .sim-pdf-hi-box.final{ background:var(--navy); color:#fff; }
+  .sim-pdf-hi-label{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px; opacity:.8; }
+  .sim-pdf-hi-value{ font-size:19px; font-weight:700; font-family:'JetBrains Mono',monospace; color:var(--navy); }
+  .sim-pdf-hi-box.final .sim-pdf-hi-value{ color:var(--paper); }
+  .sim-pdf-hi-detail{ font-size:10.5px; margin-top:6px; opacity:.85; }
+  .sim-pdf-table{ width:100%; border-collapse:collapse; font-size:10.5px; margin-top:4px; }
+  .sim-pdf-table th{ background:var(--navy); color:#fff; padding:8px 6px; text-align:right; font-size:9px; text-transform:uppercase; letter-spacing:.02em; white-space:nowrap; }
+  .sim-pdf-table th:first-child, .sim-pdf-table td:first-child{ text-align:left; }
+  .sim-pdf-table td{ padding:6px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+  .sim-pdf-table tbody tr:nth-child(even){ background:var(--paper-2); }
+  .sim-pdf-table tr.final-row td{ background:var(--amber-bg); color:var(--amber); font-weight:700; }
+  .sim-pdf-footer{ background:var(--navy); color:#fff; font-size:10px; font-weight:700; text-align:center; text-transform:uppercase; letter-spacing:.02em; padding:9px; border-radius:8px; margin-top:14px; }
   @media print{
     @page{ size:landscape; margin:12mm; }
+    @page sim-portrait{ size:portrait; margin:12mm; }
     header, .banner, .filters, .submit-row, .datalist-note,
     .note-edit, .t-notes-empty, .evid-thumb, .no-print, button{ display:none !important; }
     input, select{ border:none !important; background:transparent !important; -webkit-appearance:none; appearance:none;
@@ -285,6 +326,7 @@
     body{ background:#fff !important; }
     .print-header{ display:block !important; margin-bottom:14px; border-bottom:2px solid #152541; padding-bottom:10px; }
     .report-card{ break-inside:avoid; page-break-inside:avoid; box-shadow:none !important; border:1px solid #ddd !important; }
+    .sim-pdf-page{ border:none !important; padding:0 !important; }
     .kcard, .ticket{ break-inside:avoid; }
     .scroll-x{ overflow:visible !important; }
     table.cmp{ min-width:0 !important; width:100% !important; table-layout:fixed !important; font-size:8.5px !important; }
@@ -3217,6 +3259,19 @@ function applyAgendarSearchFilter(){
 }
 
 // ================= RENDER: Simulador de inversión =================
+// Elige hasta 4 puntos representativos del cronograma para el "flujo de
+// pagos" visual (emisión, primer pago, uno intermedio y la redención) --
+// mostrar los N pagos completos no cabe en una página vertical cuando el
+// plazo es largo (hasta 48 pagos en un bono mensual a 4 años).
+function simTimelinePoints(f, res){
+  var n = res.totalPagos;
+  var points = [{label:'Emisión', fecha:f.fechaEmision, final:false}];
+  points.push({label:'Pago 1', fecha:res.cronograma[0].fecha, final:false});
+  var mid = Math.round(n/2);
+  if(mid>1 && mid<n) points.push({label:'Pago '+mid, fecha:res.cronograma[mid-1].fecha, final:false});
+  points.push({label:'Pago '+n+' · Redención', fecha:res.cronograma[n-1].fecha, final:true});
+  return points;
+}
 function renderSimulador(){
   var f = simuladorForm;
   var res = calcularSimulacion(f);
@@ -3230,21 +3285,11 @@ function renderSimulador(){
       '</option>';
     }).join('');
   var clienteNote = f.cliente ? '<div class="datalist-note" style="margin-bottom:12px;">Simulando para: <b>'+escapeHtml(f.cliente)+'</b></div>' : '';
-  var printHeader = '<div class="print-header">'+
-    '<div style="display:flex;align-items:center;gap:14px;">'+
-      '<img src="'+LOGO_TREE+'" alt="El Olivar" style="height:46px;width:auto;flex-shrink:0;">'+
-      '<div>'+
-        '<h1 style="margin:0 0 2px;font-size:19px;">El Olivar Gestora de Fondos — Simulación de inversión</h1>'+
-        '<div style="font-size:13px;color:#444;">'+(f.cliente ? 'Cliente: '+escapeHtml(f.cliente) : 'Simulación genérica')+' · Producto: Bonos Corporativos</div>'+
-        '<div style="font-size:11px;color:#777;">Generado el '+fmtFecha(todayStr())+' por '+escapeHtml(currentUser.nombre)+'</div>'+
-      '</div>'+
-    '</div>'+
-  '</div>';
 
   var formHtml =
-    '<div class="report-card">'+
+    '<div class="report-card no-print">'+
       '<h2>Simulador de inversión</h2>'+
-      '<div class="sub" style="margin-bottom:12px;">Bono corporativo con amortización total al vencimiento (bullet): el capital se devuelve íntegro en la fecha de vencimiento, junto con el último pago de interés.</div>'+
+      '<div class="sub" style="margin-bottom:12px;">Bono corporativo con amortización total al vencimiento (bullet): el capital se devuelve íntegro en la fecha de vencimiento, junto con el último pago de interés. Todos los datos ingresados aquí se resumen en la simulación de abajo, que es la que se imprime en PDF.</div>'+
       '<form id="simulador-form">'+
         '<div class="field no-print"><label for="sim-search">Buscar prospecto</label>'+
           '<input type="text" id="sim-search" placeholder="Nombre, teléfono, correo o asesor…" value="'+escapeHtml(simuladorSearch)+'"></div>'+
@@ -3281,33 +3326,55 @@ function renderSimulador(){
   var resultHtml = '';
   if(Object.keys(errors).length === 0){
     var filas = res.cronograma.map(function(c){
-      return '<tr><td>'+c.n+'</td><td>'+fmtFecha(c.fecha)+'</td><td>'+fmtUSD(c.saldoInicial)+'</td><td>'+fmtUSD(c.interes)+'</td><td>'+fmtUSD(c.impuesto)+'</td><td>'+(c.amortizacion?fmtUSD(c.amortizacion):'—')+'</td><td>'+fmtUSD(c.neto)+'</td><td>'+fmtUSD(c.saldoFinal)+'</td></tr>';
+      return '<tr'+(c.n===res.totalPagos?' class="final-row"':'')+'>'+
+        '<td>'+c.n+'</td><td>'+fmtFecha(c.fecha)+'</td><td>'+fmtUSD(c.saldoInicial)+'</td><td>'+fmtUSD(c.interes)+'</td><td>'+fmtUSD(c.impuesto)+'</td><td>'+(c.amortizacion?fmtUSD(c.amortizacion):'—')+'</td><td>'+fmtUSD(c.neto)+'</td><td>'+fmtUSD(c.saldoFinal)+'</td></tr>';
     }).join('');
+    var tlPoints = simTimelinePoints(f, res);
+    var tlHtml = tlPoints.map(function(p){
+      return '<div class="sim-pdf-tl-item'+(p.final?' final':'')+'"><div class="sim-pdf-tl-dot"></div>'+
+        '<div class="sim-pdf-tl-label">'+escapeHtml(p.label)+'</div>'+
+        '<div class="sim-pdf-tl-date">'+fmtFecha(p.fecha)+'</div></div>';
+    }).join('');
+    var clienteHeader = f.cliente ? escapeHtml(f.cliente) : 'Simulación genérica';
     resultHtml =
-      '<div class="report-card">'+
-        '<h2>Resumen de rentabilidad</h2>'+
-        '<div class="sub" style="margin-bottom:4px;">'+res.totalPagos+' pago(s) de interés · '+f.periodicidad.toLowerCase()+'</div>'+
-        '<table class="cmp" style="max-width:520px;">'+
-          '<tr><td>Monto invertido</td><td>'+fmtUSD(parseFloat(f.monto))+'</td></tr>'+
-          '<tr><td>Interés por periodo (bruto)</td><td>'+fmtUSD(res.interesPorPeriodo)+'</td></tr>'+
-          '<tr><td>Interés total (bruto)</td><td>'+fmtUSD(res.interesTotal)+'</td></tr>'+
-          '<tr><td>Impuesto a la renta total (5%)</td><td>'+fmtUSD(res.impuestoTotal)+'</td></tr>'+
-          '<tr><td>Interés neto total</td><td>'+fmtUSD(res.interesNetoTotal)+'</td></tr>'+
-          '<tr><td>Monto total a recibir (capital + interés neto)</td><td><b>'+fmtUSD(res.montoTotal)+'</b></td></tr>'+
-        '</table>'+
-      '</div>'+
-      '<div class="report-card">'+
-        '<h2>Cronograma de pagos</h2>'+
-        '<div class="scroll-x"><table class="cmp"><thead><tr>'+
+      '<div class="sim-pdf-page">'+
+        '<div class="sim-pdf-header">'+
+          '<img src="'+LOGO_TREE+'" alt="El Olivar">'+
+          '<div>'+
+            '<h1>Simulación de inversión</h1>'+
+            '<div class="sim-pdf-sub">'+clienteHeader+' · Bonos Corporativos · '+f.plazoAnios+' años · pagos '+f.periodicidad.toLowerCase()+'</div>'+
+            '<div class="sim-pdf-sub">El Olivar Gestora de Fondos · Generado el '+fmtFecha(todayStr())+' por '+escapeHtml(currentUser.nombre)+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="sim-pdf-section-title">Resumen</div>'+
+        '<div class="sim-pdf-cards">'+
+          '<div class="sim-pdf-card"><div class="l">Monto invertido</div><div class="v">'+fmtUSD(parseFloat(f.monto))+'</div><div class="d">Capital inicial</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">TNA</div><div class="v accent">'+parseFloat(f.tna).toFixed(2)+'%</div><div class="d">Tasa nominal anual</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">Plazo</div><div class="v">'+f.plazoAnios+' años</div><div class="d">'+res.totalPagos+' pago(s) de interés</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">Frecuencia</div><div class="v">'+f.periodicidad+'</div><div class="d">Amortización al vencimiento</div></div>'+
+        '</div>'+
+        '<div class="sim-pdf-section-title">Flujo de pagos</div>'+
+        '<div class="sim-pdf-timeline">'+tlHtml+'</div>'+
+        '<div class="sim-pdf-highlight">'+
+          '<div class="sim-pdf-hi-box periodic"><div class="sim-pdf-hi-label">Pagos periódicos · interés neto</div>'+
+            '<div class="sim-pdf-hi-value">'+fmtUSD(res.interesPorPeriodo-res.impuestoPorPeriodo)+'</div>'+
+            '<div class="sim-pdf-hi-detail">Bruto '+fmtUSD(res.interesPorPeriodo)+' · IR (5%) '+fmtUSD(res.impuestoPorPeriodo)+'</div></div>'+
+          '<div class="sim-pdf-hi-box final"><div class="sim-pdf-hi-label">Pago '+res.totalPagos+' · Redención</div>'+
+            '<div class="sim-pdf-hi-value">'+fmtUSD(res.montoTotal)+'</div>'+
+            '<div class="sim-pdf-hi-detail">Capital + interés neto del último periodo</div></div>'+
+        '</div>'+
+        '<div class="sim-pdf-section-title">Cronograma de pagos</div>'+
+        '<div class="scroll-x"><table class="sim-pdf-table"><thead><tr>'+
           '<th>N°</th><th>Fecha de pago</th><th>Saldo inicial</th><th>Interés</th><th>Impuesto a la renta (5%)</th><th>Amortización</th><th>Neto a pagar</th><th>Saldo final</th>'+
         '</tr></thead><tbody>'+filas+'</tbody></table></div>'+
-        '<div class="submit-row no-print"><button class="btn" id="sim-export-pdf">Generar PDF</button></div>'+
+        '<div class="sim-pdf-footer">Pago '+res.totalPagos+' = redención del 100% del capital + interés neto del último periodo · Interés bruto total '+fmtUSD(res.interesTotal)+' · Impuesto a la renta total (5%) '+fmtUSD(res.impuestoTotal)+'</div>'+
+        '<div class="submit-row no-print" style="margin-top:14px;"><button class="btn" id="sim-export-pdf">Generar PDF</button></div>'+
       '</div>';
   } else {
     resultHtml = '<div class="report-card"><div class="sub">Completa los datos del bono para ver el cronograma de pagos y la rentabilidad estimada.</div></div>';
   }
 
-  return printHeader + formHtml + resultHtml;
+  return formHtml + resultHtml;
 }
 function wireSimuladorEvents(){
   var form = document.getElementById('simulador-form');
