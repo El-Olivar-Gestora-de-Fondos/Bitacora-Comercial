@@ -37,7 +37,7 @@
     --red-bg:#F7E1DE;
     --radius:10px;
   }
-  *{box-sizing:border-box;}
+  *{box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact;}
   body{
     margin:0; background:var(--paper); color:var(--ink);
     font-family:'Inter',sans-serif; padding:28px 18px 60px;
@@ -320,7 +320,7 @@
   .sim-pdf-table td{ padding:5px 3px; border-bottom:1px solid var(--line); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sim-pdf-table tbody tr:nth-child(even){ background:var(--paper-2); }
   .sim-pdf-table tr.final-row td{ background:var(--amber-bg); color:var(--amber); font-weight:700; }
-  .sim-pdf-table tr.fila-emision td{ color:var(--ink-soft); font-style:italic; }
+  .sim-pdf-table tr.fila-emision td{ color:var(--ink-soft); }
   /* Nunca partir una fila del cronograma entre dos páginas -- sin esto una
      fila puede quedar cortada a la mitad justo en el salto de página. */
   .sim-pdf-table tbody tr{ break-inside:avoid; page-break-inside:avoid; }
@@ -331,6 +331,11 @@
        cronograma quede cortada a la mitad en el salto de página no depende
        de este margen sino de "break-inside:avoid" en las filas (ver abajo). */
     @page sim-portrait{ size:portrait; margin:10mm; }
+    /* Fuerza que TODOS los colores (fondos incluidos) se impriman tal cual
+       están definidos. Sin esto, algunos navegadores/apps sustituyen los
+       fondos de color por un tono por defecto al imprimir o exportar a PDF
+       (a veces un celeste/gris claro) en vez del crema del diseño. */
+    *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
     header, .banner, .filters, .submit-row, .datalist-note,
     .note-edit, .t-notes-empty, .evid-thumb, .no-print, button{ display:none !important; }
     input, select{ border:none !important; background:transparent !important; -webkit-appearance:none; appearance:none;
