@@ -1094,8 +1094,10 @@ function fmtUSD(n){
 // Bono a tasa nominal anual (TNA) con amortización única al vencimiento
 // (bullet): cada periodo paga solo el interés (TNA/periodos-por-año sobre el
 // monto invertido) y en la fecha de vencimiento se paga el último interés
-// más el 100% del capital.
+// más el 100% del capital. El interés de cada periodo está sujeto a
+// retención de Impuesto a la Renta de 5% (2da categoría, persona natural).
 var SIMULADOR_PERIODOS_POR_ANIO = { 'Mensual':12, 'Trimestral':4, 'Semestral':2, 'Anual':1 };
+var SIMULADOR_TASA_IR = 0.05;
 function simuladorValidar(form){
   var errors = {};
   var tna = parseFloat(form.tna);
@@ -1118,28 +1120,41 @@ function calcularSimulacion(form){
   var mesesPorPeriodo = 12 / periodosPorAnio;
   var interesPorPeriodo = monto * (tna/100) / periodosPorAnio;
   var fechaVencimiento = addMonthsToDateStr(form.fechaEmision, plazoAnios*12);
+  var impuestoPorPeriodo = interesPorPeriodo * SIMULADOR_TASA_IR;
   var cronograma = [];
+  var saldo = monto;
   for(var i=1;i<=totalPagos;i++){
     var esUltimo = i===totalPagos;
-    var amortizacion = esUltimo ? monto : 0;
+    var saldoInicial = saldo;
+    var amortizacion = esUltimo ? saldoInicial : 0;
+    var saldoFinal = saldoInicial - amortizacion;
+    saldo = saldoFinal;
     cronograma.push({
       n: i,
       fecha: addMonthsToDateStr(form.fechaEmision, Math.round(mesesPorPeriodo*i)),
+      saldoInicial: saldoInicial,
       interes: interesPorPeriodo,
+      impuesto: impuestoPorPeriodo,
       amortizacion: amortizacion,
-      flujo: interesPorPeriodo + amortizacion
+      saldoFinal: saldoFinal,
+      neto: (interesPorPeriodo - impuestoPorPeriodo) + amortizacion
     });
   }
   var interesTotal = interesPorPeriodo * totalPagos;
-  var montoTotal = monto + interesTotal;
-  var rentabilidadPct = monto>0 ? (interesTotal/monto*100) : 0;
+  var impuestoTotal = impuestoPorPeriodo * totalPagos;
+  var interesNetoTotal = interesTotal - impuestoTotal;
+  var montoTotal = monto + interesNetoTotal;
+  var rentabilidadPct = monto>0 ? (interesNetoTotal/monto*100) : 0;
   return {
     errors: {},
     fechaVencimiento: fechaVencimiento,
     totalPagos: totalPagos,
     interesPorPeriodo: interesPorPeriodo,
+    impuestoPorPeriodo: impuestoPorPeriodo,
     cronograma: cronograma,
     interesTotal: interesTotal,
+    impuestoTotal: impuestoTotal,
+    interesNetoTotal: interesNetoTotal,
     montoTotal: montoTotal,
     rentabilidadPct: rentabilidadPct
   };
@@ -3240,7 +3255,7 @@ function renderSimulador(){
   var resultHtml = '';
   if(Object.keys(errors).length === 0){
     var filas = res.cronograma.map(function(c){
-      return '<tr><td>'+c.n+'</td><td>'+fmtFecha(c.fecha)+'</td><td>'+fmtUSD(c.interes)+'</td><td>'+(c.amortizacion?fmtUSD(c.amortizacion):'—')+'</td><td>'+fmtUSD(c.flujo)+'</td></tr>';
+      return '<tr><td>'+c.n+'</td><td>'+fmtFecha(c.fecha)+'</td><td>'+fmtUSD(c.saldoInicial)+'</td><td>'+fmtUSD(c.interes)+'</td><td>'+fmtUSD(c.impuesto)+'</td><td>'+(c.amortizacion?fmtUSD(c.amortizacion):'—')+'</td><td>'+fmtUSD(c.saldoFinal)+'</td><td>'+fmtUSD(c.neto)+'</td></tr>';
     }).join('');
     resultHtml =
       '<div class="report-card">'+
@@ -3248,16 +3263,18 @@ function renderSimulador(){
         '<div class="sub" style="margin-bottom:4px;">'+res.totalPagos+' pago(s) de interés · '+f.periodicidad.toLowerCase()+'</div>'+
         '<table class="cmp" style="max-width:520px;">'+
           '<tr><td>Monto invertido</td><td>'+fmtUSD(parseFloat(f.monto))+'</td></tr>'+
-          '<tr><td>Interés por periodo</td><td>'+fmtUSD(res.interesPorPeriodo)+'</td></tr>'+
-          '<tr><td>Interés total a recibir</td><td>'+fmtUSD(res.interesTotal)+'</td></tr>'+
-          '<tr><td>Monto total a recibir (capital + interés)</td><td><b>'+fmtUSD(res.montoTotal)+'</b></td></tr>'+
-          '<tr><td>Rentabilidad total del periodo</td><td><b>'+res.rentabilidadPct.toFixed(2)+'%</b></td></tr>'+
+          '<tr><td>Interés por periodo (bruto)</td><td>'+fmtUSD(res.interesPorPeriodo)+'</td></tr>'+
+          '<tr><td>Interés total (bruto)</td><td>'+fmtUSD(res.interesTotal)+'</td></tr>'+
+          '<tr><td>Impuesto a la renta total (5%)</td><td>'+fmtUSD(res.impuestoTotal)+'</td></tr>'+
+          '<tr><td>Interés neto total</td><td>'+fmtUSD(res.interesNetoTotal)+'</td></tr>'+
+          '<tr><td>Monto total a recibir (capital + interés neto)</td><td><b>'+fmtUSD(res.montoTotal)+'</b></td></tr>'+
+          '<tr><td>Rentabilidad total neta del periodo</td><td><b>'+res.rentabilidadPct.toFixed(2)+'%</b></td></tr>'+
         '</table>'+
       '</div>'+
       '<div class="report-card">'+
         '<h2>Cronograma de pagos</h2>'+
         '<div class="scroll-x"><table class="cmp"><thead><tr>'+
-          '<th>N°</th><th>Fecha de pago</th><th>Interés</th><th>Amortización</th><th>Flujo total</th>'+
+          '<th>N°</th><th>Fecha de pago</th><th>Saldo inicial</th><th>Interés</th><th>Impuesto a la renta (5%)</th><th>Amortización</th><th>Saldo final</th><th>Neto a pagar</th>'+
         '</tr></thead><tbody>'+filas+'</tbody></table></div>'+
       '</div>';
   } else {
