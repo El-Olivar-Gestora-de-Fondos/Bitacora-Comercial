@@ -309,16 +309,11 @@
   .sim-pdf-tl-date{ font-size:9.5px; color:var(--ink-soft); margin-top:2px; }
   .sim-pdf-highlight{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:4px; }
   .sim-pdf-hi-box{ border-radius:10px; padding:11px; break-inside:avoid; text-align:center; }
-  /* El celeste (--blue / --blue-bg) es el mismo tono que ya usa el resto de
-     la app para "Bono Corporativo" y "Agendada" -- se usa aquí para la caja
-     de pagos periódicos (algo "en curso"), reservando el navy sólido para el
-     pago de redención (el cierre del bono). */
-  .sim-pdf-hi-box.periodic{ background:var(--blue-bg); border:1px solid #C7D9EA; }
-  .sim-pdf-hi-box.final{ background:var(--navy); color:#fff; }
+  .sim-pdf-hi-box.periodic{ background:var(--card); border:1px solid var(--line); }
+  .sim-pdf-hi-box.final{ background:var(--card); border:1px solid var(--line); }
   .sim-pdf-hi-label{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px; opacity:.8; }
   .sim-pdf-hi-value{ font-size:19px; font-weight:700; font-family:'JetBrains Mono','SFMono-Regular',Consolas,Menlo,monospace; color:var(--navy); }
-  .sim-pdf-hi-box.periodic .sim-pdf-hi-value{ color:var(--blue); }
-  .sim-pdf-hi-box.final .sim-pdf-hi-value{ color:var(--paper); }
+  .sim-pdf-hi-box.final .sim-pdf-hi-value{ color:var(--amber); }
   .sim-pdf-hi-detail{ font-size:10.5px; margin-top:5px; opacity:.85; }
   .sim-pdf-table{ width:100%; border-collapse:collapse; font-size:10px; margin-top:3px; table-layout:fixed; }
   .sim-pdf-table th{ background:var(--navy); color:#fff; padding:6px 3px; text-align:center; font-size:8.5px; text-transform:uppercase; letter-spacing:.01em; white-space:normal; line-height:1.2; word-break:break-word; }
