@@ -344,7 +344,10 @@
     .print-header{ display:block !important; margin-bottom:14px; border-bottom:2px solid #152541; padding-bottom:10px; }
     .report-card{ break-inside:avoid; page-break-inside:avoid; box-shadow:none !important; border:1px solid #ddd !important; }
     .wrap{ max-width:none !important; }
-    .sim-pdf-page{ border:none !important; padding:0 !important; width:100% !important; max-width:100% !important; box-sizing:border-box; }
+    /* Mantiene el mismo marco (borde gris redondeado) que se ve en pantalla,
+       en vez de quitarlo al imprimir -- así el PDF luce igual que la vista
+       previa, encuadrado por esas líneas grises. */
+    .sim-pdf-page{ border:1px solid #DEDACB !important; border-radius:14px !important; padding:20px !important; width:100% !important; max-width:100% !important; box-sizing:border-box; }
     .kcard, .ticket{ break-inside:avoid; }
     .scroll-x{ overflow:visible !important; }
     table.cmp{ min-width:0 !important; width:100% !important; table-layout:fixed !important; font-size:8.5px !important; }
