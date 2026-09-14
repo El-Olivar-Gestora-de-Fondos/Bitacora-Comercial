@@ -286,7 +286,7 @@
   .sim-pdf-header img{ height:42px; width:auto; flex-shrink:0; filter:brightness(0) invert(1); }
   .sim-pdf-header h1{ margin:0 0 3px; font-size:17px; letter-spacing:.02em; text-transform:uppercase; font-family:'Inter',sans-serif; color:#fff; }
   .sim-pdf-header .sim-pdf-sub{ font-size:11.5px; opacity:.85; }
-  .sim-pdf-section-title{ font-size:12px; font-weight:700; color:var(--navy); text-transform:uppercase; letter-spacing:.04em; margin:18px 0 10px; }
+  .sim-pdf-section-title{ font-size:12px; font-weight:700; color:var(--navy); text-transform:uppercase; letter-spacing:.04em; margin:18px 0 10px; break-after:avoid; page-break-after:avoid; }
   .sim-pdf-cards{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:4px; }
   .sim-pdf-card{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; break-inside:avoid; }
   .sim-pdf-card .l{ font-size:10px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px; }
@@ -309,16 +309,24 @@
   .sim-pdf-hi-value{ font-size:19px; font-weight:700; font-family:'JetBrains Mono',monospace; color:var(--navy); }
   .sim-pdf-hi-box.final .sim-pdf-hi-value{ color:var(--paper); }
   .sim-pdf-hi-detail{ font-size:10.5px; margin-top:6px; opacity:.85; }
-  .sim-pdf-table{ width:100%; border-collapse:collapse; font-size:10.5px; margin-top:4px; }
-  .sim-pdf-table th{ background:var(--navy); color:#fff; padding:8px 6px; text-align:right; font-size:9px; text-transform:uppercase; letter-spacing:.02em; white-space:nowrap; }
+  .sim-pdf-table{ width:100%; border-collapse:collapse; font-size:10px; margin-top:4px; }
+  .sim-pdf-table th{ background:var(--navy); color:#fff; padding:7px 4px; text-align:right; font-size:8.5px; text-transform:uppercase; letter-spacing:.01em; white-space:nowrap; }
   .sim-pdf-table th:first-child, .sim-pdf-table td:first-child{ text-align:left; }
-  .sim-pdf-table td{ padding:6px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
+  .sim-pdf-table td{ padding:5px 4px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
   .sim-pdf-table tbody tr:nth-child(even){ background:var(--paper-2); }
   .sim-pdf-table tr.final-row td{ background:var(--amber-bg); color:var(--amber); font-weight:700; }
-  .sim-pdf-footer{ background:var(--navy); color:#fff; font-size:10px; font-weight:700; text-align:center; text-transform:uppercase; letter-spacing:.02em; padding:9px; border-radius:8px; margin-top:14px; }
+  /* Nunca partir una fila del cronograma entre dos páginas -- sin esto una
+     fila puede quedar cortada a la mitad justo en el salto de página. */
+  .sim-pdf-table tbody tr{ break-inside:avoid; page-break-inside:avoid; }
+  .sim-pdf-footer{ background:var(--navy); color:#fff; font-size:10px; font-weight:700; text-align:center; text-transform:uppercase; letter-spacing:.02em; padding:9px; border-radius:8px; margin-top:14px; break-inside:avoid; }
   @media print{
     @page{ size:landscape; margin:12mm; }
-    @page sim-portrait{ size:portrait; margin:12mm; }
+    /* Más margen abajo que a los costados: una tabla larga (hasta 48 filas)
+       puede llegar muy pegada al borde inferior de la hoja en la última
+       página -- este margen extra evita que se vea cortada. Los costados
+       también llevan un poco más de margen (14mm) como colchón de seguridad
+       frente a variaciones de escala/márgenes del navegador o la impresora. */
+    @page sim-portrait{ size:portrait; margin:14mm 14mm 22mm 14mm; }
     header, .banner, .filters, .submit-row, .datalist-note,
     .note-edit, .t-notes-empty, .evid-thumb, .no-print, button{ display:none !important; }
     input, select{ border:none !important; background:transparent !important; -webkit-appearance:none; appearance:none;
@@ -326,7 +334,8 @@
     body{ background:#fff !important; }
     .print-header{ display:block !important; margin-bottom:14px; border-bottom:2px solid #152541; padding-bottom:10px; }
     .report-card{ break-inside:avoid; page-break-inside:avoid; box-shadow:none !important; border:1px solid #ddd !important; }
-    .sim-pdf-page{ border:none !important; padding:0 !important; }
+    .wrap{ max-width:none !important; }
+    .sim-pdf-page{ border:none !important; padding:0 !important; width:100% !important; max-width:100% !important; box-sizing:border-box; }
     .kcard, .ticket{ break-inside:avoid; }
     .scroll-x{ overflow:visible !important; }
     table.cmp{ min-width:0 !important; width:100% !important; table-layout:fixed !important; font-size:8.5px !important; }
@@ -1130,19 +1139,17 @@ function yearsForSelect(){
   });
   return Object.keys(years).map(Number).sort(function(a,b){ return b-a; });
 }
+// SIEMPRE con 2 decimales (nunca los recorta aunque sean ".00" o ".50"):
+// antes recortaba decimales redondos (ej. "$142.5" en vez de "$142.50", o
+// "$3,600" en vez de "$3,600.00"), lo cual se ve como un dato inconsistente
+// o mal calculado en un monto financiero. Se aplica en toda la app.
 function fmtUSD(n){
-  if(n==null || isNaN(n)) return '—';
-  return '$ ' + Number(n).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:2});
-}
-// Igual que fmtUSD pero SIEMPRE con 2 decimales (nunca los recorta aunque
-// sean ".00" o ".50") -- fmtUSD normal los recorta (ej. "$142.5" en vez de
-// "$142.50", o "$3,600" en vez de "$3,600.00"), lo cual en montos redondeados
-// de negocio no importa, pero en un cronograma financiero de interés/IR se
-// ve como un dato inconsistente o mal calculado. Se usa solo en el Simulador.
-function fmtUSD2(n){
   if(n==null || isNaN(n)) return '—';
   return '$ ' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
+// Alias histórico (mismo comportamiento que fmtUSD; se mantiene para no
+// tocar cada punto donde ya se usa fmtUSD2 en el Simulador).
+function fmtUSD2(n){ return fmtUSD(n); }
 
 // ---------- simulador de inversión (bonos corporativos) ----------
 // Bono a tasa nominal anual (TNA) con amortización única al vencimiento
@@ -3372,6 +3379,8 @@ function renderSimulador(){
           '<div class="sim-pdf-card"><div class="l">TNA</div><div class="v accent">'+parseFloat(f.tna).toFixed(2)+'%</div><div class="d">Tasa nominal anual</div></div>'+
           '<div class="sim-pdf-card"><div class="l">Plazo</div><div class="v">'+f.plazoAnios+' años</div><div class="d">'+res.totalPagos+' pago(s) de interés</div></div>'+
           '<div class="sim-pdf-card"><div class="l">Frecuencia</div><div class="v">'+f.periodicidad+'</div><div class="d">Amortización al vencimiento</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">Interés bruto total</div><div class="v">'+fmtUSD2(res.interesTotal)+'</div><div class="d">Suma de los '+res.totalPagos+' pago(s), antes de impuesto</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">IR total (5%)</div><div class="v accent">'+fmtUSD2(res.impuestoTotal)+'</div><div class="d">Impuesto a la renta retenido en total</div></div>'+
         '</div>'+
         '<div class="sim-pdf-section-title">Flujo de pagos</div>'+
         '<div class="sim-pdf-timeline">'+tlHtml+'</div>'+
@@ -3387,7 +3396,7 @@ function renderSimulador(){
         '<div class="scroll-x"><table class="sim-pdf-table"><thead><tr>'+
           '<th>N°</th><th>Fecha de pago</th><th>Saldo inicial</th><th>Interés</th><th>Impuesto a la renta (5%)</th><th>Amortización</th><th>Neto a pagar</th><th>Saldo final</th>'+
         '</tr></thead><tbody>'+filas+'</tbody></table></div>'+
-        '<div class="sim-pdf-footer">Pago '+res.totalPagos+' = redención del 100% del capital + interés neto del último periodo · Interés bruto total '+fmtUSD2(res.interesTotal)+' · Impuesto a la renta total (5%) '+fmtUSD2(res.impuestoTotal)+'</div>'+
+        '<div class="sim-pdf-footer">Pago '+res.totalPagos+' = redención del 100% del capital + interés neto del último periodo</div>'+
         '<div class="submit-row no-print" style="margin-top:14px;"><button class="btn" id="sim-export-pdf">Generar PDF</button></div>'+
       '</div>';
   } else {
