@@ -320,12 +320,10 @@
   .sim-pdf-footer{ background:var(--navy); color:#fff; font-size:10px; font-weight:700; text-align:center; text-transform:uppercase; letter-spacing:.02em; padding:9px; border-radius:8px; margin-top:14px; break-inside:avoid; }
   @media print{
     @page{ size:landscape; margin:12mm; }
-    /* Más margen abajo que a los costados: una tabla larga (hasta 48 filas)
-       puede llegar muy pegada al borde inferior de la hoja en la última
-       página -- este margen extra evita que se vea cortada. Los costados
-       también llevan un poco más de margen (14mm) como colchón de seguridad
-       frente a variaciones de escala/márgenes del navegador o la impresora. */
-    @page sim-portrait{ size:portrait; margin:14mm 14mm 22mm 14mm; }
+    /* Márgenes estrechos (10mm) en los cuatro lados. Que ninguna fila del
+       cronograma quede cortada a la mitad en el salto de página no depende
+       de este margen sino de "break-inside:avoid" en las filas (ver abajo). */
+    @page sim-portrait{ size:portrait; margin:10mm; }
     header, .banner, .filters, .submit-row, .datalist-note,
     .note-edit, .t-notes-empty, .evid-thumb, .no-print, button{ display:none !important; }
     input, select{ border:none !important; background:transparent !important; -webkit-appearance:none; appearance:none;
