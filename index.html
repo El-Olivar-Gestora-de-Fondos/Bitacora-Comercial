@@ -451,6 +451,7 @@ var prospectoSearch = '';
 var agendarForm = defaultAgendarForm();
 var agendarErrors = {};
 var agendarSearch = '';
+var simuladorForm = defaultSimuladorForm();
 
 function defaultProspectoForm(){
   return {
@@ -461,6 +462,11 @@ function defaultProspectoForm(){
 function defaultAgendarForm(){
   return {
     prospectoId:'', modalidad:'Presencial', fecha: todayStr(), hora:'', lugar:'', meetLink:'', notas:''
+  };
+}
+function defaultSimuladorForm(){
+  return {
+    cliente:'', plazoAnios:3, tna:'', periodicidad:'Mensual', fechaEmision: todayStr(), monto:''
   };
 }
 // Abre el formulario de "Agendar cita" para un prospecto. Si ya tiene una
@@ -500,6 +506,20 @@ function reprogramarDesdeOportunidad(opId){
   view = 'agendar';
   render();
 }
+// Botón "Simular inversión" en un ticket/tarjeta de oportunidad: abre el
+// Simulador ya precargado con el nombre del cliente y, si existe, el monto
+// probable de cierre (o el monto real si ya está en Cierres) como monto a
+// invertir. El asesor puede ajustar cualquier campo antes de calcular.
+function simularDesdeOportunidad(opId){
+  var op = state.oportunidades.filter(function(o){ return o.id===opId; })[0];
+  if(!op) return;
+  var montoBase = op.etapa==='emitida' ? op.monto : op.montoProbable;
+  simuladorForm = defaultSimuladorForm();
+  simuladorForm.cliente = (op.clienteNombres+' '+op.clienteApellidos).trim();
+  if(montoBase!=null) simuladorForm.monto = String(montoBase);
+  view = 'simulador';
+  render();
+}
 
 // ---------- small utils ----------
 function todayStr(){
@@ -508,6 +528,21 @@ function todayStr(){
 }
 function monthStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 function isoFromDateObj(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Suma "months" meses a una fecha "YYYY-MM-DD" y devuelve el resultado en el
+// mismo formato. Si el día no existe en el mes destino (ej. 31 de un mes que
+// tiene 30), JS lo corrige automáticamente pasando al mes siguiente -- por
+// eso se fija el día antes de sumar el mes, para evitar ese desborde.
+function addMonthsToDateStr(fechaStr, months){
+  var parts = (fechaStr||'').split('-');
+  if(parts.length!==3) return '';
+  var y=parseInt(parts[0],10), m=parseInt(parts[1],10), d=parseInt(parts[2],10);
+  if(isNaN(y)||isNaN(m)||isNaN(d)) return '';
+  var target = new Date(y, m-1, 1);
+  target.setMonth(target.getMonth()+months);
+  var lastDay = new Date(target.getFullYear(), target.getMonth()+1, 0).getDate();
+  target.setDate(Math.min(d, lastDay));
+  return isoFromDateObj(target);
+}
 function weekRangeFor(fechaStr){
   // Semana de lunes a domingo que contiene fechaStr.
   var d = new Date((fechaStr||todayStr())+'T00:00:00');
@@ -1055,6 +1090,61 @@ function fmtUSD(n){
   return '$ ' + Number(n).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:2});
 }
 
+// ---------- simulador de inversión (bonos corporativos) ----------
+// Bono a tasa nominal anual (TNA) con amortización única al vencimiento
+// (bullet): cada periodo paga solo el interés (TNA/periodos-por-año sobre el
+// monto invertido) y en la fecha de vencimiento se paga el último interés
+// más el 100% del capital.
+var SIMULADOR_PERIODOS_POR_ANIO = { 'Mensual':12, 'Trimestral':4, 'Semestral':2, 'Anual':1 };
+function simuladorValidar(form){
+  var errors = {};
+  var tna = parseFloat(form.tna);
+  var monto = parseFloat(form.monto);
+  if(!form.fechaEmision) errors.fechaEmision = 'Ingresa la fecha de emisión.';
+  if(form.tna==='' || isNaN(tna) || tna<=0) errors.tna = 'Ingresa una TNA válida (mayor a 0).';
+  if(form.monto==='' || isNaN(monto) || monto<=0) errors.monto = 'Ingresa un monto a invertir válido (mayor a 0).';
+  if(!SIMULADOR_PERIODOS_POR_ANIO[form.periodicidad]) errors.periodicidad = 'Periodicidad inválida.';
+  if([2,3,4].indexOf(parseInt(form.plazoAnios,10))===-1) errors.plazoAnios = 'Plazo inválido.';
+  return errors;
+}
+function calcularSimulacion(form){
+  var errors = simuladorValidar(form);
+  if(Object.keys(errors).length) return { errors: errors };
+  var plazoAnios = parseInt(form.plazoAnios,10);
+  var tna = parseFloat(form.tna);
+  var monto = parseFloat(form.monto);
+  var periodosPorAnio = SIMULADOR_PERIODOS_POR_ANIO[form.periodicidad];
+  var totalPagos = plazoAnios * periodosPorAnio;
+  var mesesPorPeriodo = 12 / periodosPorAnio;
+  var interesPorPeriodo = monto * (tna/100) / periodosPorAnio;
+  var fechaVencimiento = addMonthsToDateStr(form.fechaEmision, plazoAnios*12);
+  var cronograma = [];
+  for(var i=1;i<=totalPagos;i++){
+    var esUltimo = i===totalPagos;
+    var amortizacion = esUltimo ? monto : 0;
+    cronograma.push({
+      n: i,
+      fecha: addMonthsToDateStr(form.fechaEmision, Math.round(mesesPorPeriodo*i)),
+      interes: interesPorPeriodo,
+      amortizacion: amortizacion,
+      flujo: interesPorPeriodo + amortizacion
+    });
+  }
+  var interesTotal = interesPorPeriodo * totalPagos;
+  var montoTotal = monto + interesTotal;
+  var rentabilidadPct = monto>0 ? (interesTotal/monto*100) : 0;
+  return {
+    errors: {},
+    fechaVencimiento: fechaVencimiento,
+    totalPagos: totalPagos,
+    interesPorPeriodo: interesPorPeriodo,
+    cronograma: cronograma,
+    interesTotal: interesTotal,
+    montoTotal: montoTotal,
+    rentabilidadPct: rentabilidadPct
+  };
+}
+
 // ---------- reminders ----------
 function citaDateTime(c){ return new Date(c.fecha+'T'+(c.hora||'00:00')+':00'); }
 function getUpcomingReminders(){
@@ -1472,7 +1562,8 @@ function render(){
   var navItems = [
     {k:'agenda', l:'Agenda'},
     {k:'funnel', l:'Funnel'},
-    {k:'reporte', l:'Reporte'}
+    {k:'reporte', l:'Reporte'},
+    {k:'simulador', l:'Simulador'}
   ];
   if(isViewer()){
     navItems.push({k:'prospectos', l:'Prospectos'});
@@ -1521,6 +1612,7 @@ function render(){
   if(view === 'agenda'){ vc.innerHTML = renderAgenda(asesoresUnicos); wireAgendaEvents(); }
   else if(view === 'funnel'){ vc.innerHTML = renderFunnel(asesoresUnicos); wireFunnelEvents(); }
   else if(view === 'reporte'){ vc.innerHTML = renderReporte(asesoresUnicos); wireReporteEvents(asesoresUnicos); }
+  else if(view === 'simulador'){ vc.innerHTML = renderSimulador(); wireSimuladorEvents(); }
   else if(view === 'importar'){
     if(isAdmin()){ vc.innerHTML = renderImportar(asesoresUnicos); wireImportarEvents(asesoresUnicos); }
     else { vc.innerHTML = renderImportarProspectosAsesor(); wireImportarProspectosAsesorEvents(); }
@@ -1592,10 +1684,11 @@ function renderTicket(op, showAsesor){
   var motivo = (op.etapa==='perdida' && op.motivoPerdida) ? '<div style="font-size:11.5px;color:var(--red);margin-top:4px;">Motivo: '+escapeHtml(op.motivoPerdida)+'</div>' : '';
   var actions = '';
   var reprogBtn = canReprogramar(op) ? ' <button class="btn" data-reprogramar="'+op.id+'">Reprogramar</button>' : '';
+  var simularBtn = op.producto === 'Bono Corporativo' ? ' <button class="btn" data-simular="'+op.id+'">Simular inversión</button>' : '';
   if(editable){
-    actions = stageSelectHtml(op)+evid+reprogBtn+' <button class="btn danger" data-del-op="'+op.id+'">Eliminar</button>';
+    actions = stageSelectHtml(op)+evid+reprogBtn+simularBtn+' <button class="btn danger" data-del-op="'+op.id+'">Eliminar</button>';
   } else {
-    actions = stageBadge+' '+evid;
+    actions = stageBadge+' '+evid+simularBtn;
   }
   return (
     '<div class="ticket">'+
@@ -1628,6 +1721,7 @@ function renderKCard(op, showAsesor){
     : '';
   var evidBtn = editable ? '<button class="btn" data-evid="'+op.id+'">'+(op.evidencia?'Cambiar':'Adjuntar')+' evidencia</button>' : '';
   var reprogBtn = canReprogramar(op) ? ' <button class="btn" data-reprogramar="'+op.id+'">Reprogramar</button>' : '';
+  var simularBtn = op.producto === 'Bono Corporativo' ? ' <button class="btn" data-simular="'+op.id+'">Simular inversión</button>' : '';
   var motivo = (op.etapa==='perdida' && op.motivoPerdida) ? '<div class="kc-meta" style="color:var(--red);">Motivo: '+escapeHtml(op.motivoPerdida)+'</div>' : '';
   return (
     '<div class="kcard'+(editable?' kcard-drag':'')+'" '+(editable?'draggable="true" data-drag-op="'+op.id+'"':'')+'>'+
@@ -1641,7 +1735,7 @@ function renderKCard(op, showAsesor){
       montoBlock(op, editable)+
       montoProbableBlock(op, editable)+
       notesBlock(op, editable, '')+
-      '<div class="kc-actions">'+evid+evidBtn+reprogBtn+(editable?' <button class="btn danger" data-del-op="'+op.id+'">Eliminar</button>':'')+'</div>'+
+      '<div class="kc-actions">'+evid+evidBtn+reprogBtn+simularBtn+(editable?' <button class="btn danger" data-del-op="'+op.id+'">Eliminar</button>':'')+'</div>'+
     '</div>'
   );
 }
@@ -1822,6 +1916,7 @@ function wireCommonOpEvents(){
   document.querySelectorAll('[data-del-op]').forEach(function(el){ el.onclick = function(){ deleteOp(el.dataset.delOp); }; });
   document.querySelectorAll('[data-evid]').forEach(function(el){ el.onclick = function(){ attachEvidence(el.dataset.evid); }; });
   document.querySelectorAll('[data-reprogramar]').forEach(function(el){ el.onclick = function(){ reprogramarDesdeOportunidad(el.dataset.reprogramar); }; });
+  document.querySelectorAll('[data-simular]').forEach(function(el){ el.onclick = function(){ simularDesdeOportunidad(el.dataset.simular); }; });
   document.querySelectorAll('[data-view-evid]').forEach(function(img){
     img.onclick = function(){
       evidenceModal = state.oportunidades.filter(function(o){ return o.id===img.dataset.viewEvid; })[0];
@@ -3101,6 +3196,84 @@ function applyAgendarSearchFilter(){
     var match = !q || opt.dataset.search.indexOf(q) !== -1;
     opt.style.display = match ? '' : 'none';
   });
+}
+
+// ================= RENDER: Simulador de inversión =================
+function renderSimulador(){
+  var f = simuladorForm;
+  var res = calcularSimulacion(f);
+  var errors = res.errors;
+  var clienteNote = f.cliente ? '<div class="datalist-note" style="margin-bottom:12px;">Simulando para: <b>'+escapeHtml(f.cliente)+'</b></div>' : '';
+
+  var formHtml =
+    '<div class="report-card">'+
+      '<h2>Simulador de inversión</h2>'+
+      '<div class="sub" style="margin-bottom:12px;">Bono corporativo con amortización total al vencimiento (bullet): el capital se devuelve íntegro en la fecha de vencimiento, junto con el último pago de interés.</div>'+
+      clienteNote+
+      '<form id="simulador-form">'+
+        '<div class="field"><label>Producto</label><input value="Bonos Corporativos" disabled></div>'+
+        '<div class="grid2">'+
+          '<div class="field"><label for="sim-plazo">Plazo</label><select id="sim-plazo">'+
+            [2,3,4].map(function(p){ return '<option value="'+p+'" '+(parseInt(f.plazoAnios,10)===p?'selected':'')+'>'+p+' años</option>'; }).join('')+
+          '</select>'+(errors.plazoAnios?'<div class="err">'+errors.plazoAnios+'</div>':'')+'</div>'+
+          '<div class="field"><label for="sim-tna">Tasa Nominal Anual (TNA %)</label>'+
+            '<input type="number" step="0.01" min="0" id="sim-tna" placeholder="Ej: 9.5" value="'+escapeHtml(f.tna)+'">'+
+            (errors.tna?'<div class="err">'+errors.tna+'</div>':'')+'</div>'+
+        '</div>'+
+        '<div class="grid2">'+
+          '<div class="field"><label for="sim-periodicidad">Periodicidad de pago de intereses</label><select id="sim-periodicidad">'+
+            ['Mensual','Trimestral','Semestral','Anual'].map(function(p){ return '<option value="'+p+'" '+(f.periodicidad===p?'selected':'')+'>'+p+'</option>'; }).join('')+
+          '</select>'+(errors.periodicidad?'<div class="err">'+errors.periodicidad+'</div>':'')+'</div>'+
+          '<div class="field"><label>Amortización</label><input value="Al Vencimiento" disabled></div>'+
+        '</div>'+
+        '<div class="grid2">'+
+          '<div class="field"><label for="sim-fecha">Fecha de Emisión</label><input type="date" id="sim-fecha" value="'+f.fechaEmision+'">'+
+            (errors.fechaEmision?'<div class="err">'+errors.fechaEmision+'</div>':'')+'</div>'+
+          '<div class="field"><label>Fecha de Vencimiento</label><input value="'+(res.fechaVencimiento?fmtFecha(res.fechaVencimiento):'—')+'" disabled></div>'+
+        '</div>'+
+        '<div class="field"><label for="sim-monto">Monto a invertir (USD)</label>'+
+          '<input type="number" step="0.01" min="0" id="sim-monto" placeholder="Ej: 10000" value="'+escapeHtml(f.monto)+'">'+
+          (errors.monto?'<div class="err">'+errors.monto+'</div>':'')+'</div>'+
+      '</form>'+
+    '</div>';
+
+  var resultHtml = '';
+  if(Object.keys(errors).length === 0){
+    var filas = res.cronograma.map(function(c){
+      return '<tr><td>'+c.n+'</td><td>'+fmtFecha(c.fecha)+'</td><td>'+fmtUSD(c.interes)+'</td><td>'+(c.amortizacion?fmtUSD(c.amortizacion):'—')+'</td><td>'+fmtUSD(c.flujo)+'</td></tr>';
+    }).join('');
+    resultHtml =
+      '<div class="report-card">'+
+        '<h2>Resumen de rentabilidad</h2>'+
+        '<div class="sub" style="margin-bottom:4px;">'+res.totalPagos+' pago(s) de interés · '+f.periodicidad.toLowerCase()+'</div>'+
+        '<table class="cmp" style="max-width:520px;">'+
+          '<tr><td>Monto invertido</td><td>'+fmtUSD(parseFloat(f.monto))+'</td></tr>'+
+          '<tr><td>Interés por periodo</td><td>'+fmtUSD(res.interesPorPeriodo)+'</td></tr>'+
+          '<tr><td>Interés total a recibir</td><td>'+fmtUSD(res.interesTotal)+'</td></tr>'+
+          '<tr><td>Monto total a recibir (capital + interés)</td><td><b>'+fmtUSD(res.montoTotal)+'</b></td></tr>'+
+          '<tr><td>Rentabilidad total del periodo</td><td><b>'+res.rentabilidadPct.toFixed(2)+'%</b></td></tr>'+
+        '</table>'+
+      '</div>'+
+      '<div class="report-card">'+
+        '<h2>Cronograma de pagos</h2>'+
+        '<div class="scroll-x"><table class="cmp"><thead><tr>'+
+          '<th>N°</th><th>Fecha de pago</th><th>Interés</th><th>Amortización</th><th>Flujo total</th>'+
+        '</tr></thead><tbody>'+filas+'</tbody></table></div>'+
+      '</div>';
+  } else {
+    resultHtml = '<div class="report-card"><div class="sub">Completa los datos del bono para ver el cronograma de pagos y la rentabilidad estimada.</div></div>';
+  }
+
+  return formHtml + resultHtml;
+}
+function wireSimuladorEvents(){
+  var form = document.getElementById('simulador-form');
+  if(!form) return;
+  document.getElementById('sim-plazo').onchange = function(e){ simuladorForm.plazoAnios = e.target.value; render(); };
+  document.getElementById('sim-tna').onchange = function(e){ simuladorForm.tna = e.target.value; render(); };
+  document.getElementById('sim-periodicidad').onchange = function(e){ simuladorForm.periodicidad = e.target.value; render(); };
+  document.getElementById('sim-fecha').onchange = function(e){ simuladorForm.fechaEmision = e.target.value; render(); };
+  document.getElementById('sim-monto').onchange = function(e){ simuladorForm.monto = e.target.value; render(); };
 }
 
 // ================= RENDER: Importar (admin) =================
