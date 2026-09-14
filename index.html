@@ -452,6 +452,7 @@ var agendarForm = defaultAgendarForm();
 var agendarErrors = {};
 var agendarSearch = '';
 var simuladorForm = defaultSimuladorForm();
+var simuladorSearch = '';
 
 function defaultProspectoForm(){
   return {
@@ -466,7 +467,7 @@ function defaultAgendarForm(){
 }
 function defaultSimuladorForm(){
   return {
-    cliente:'', plazoAnios:3, tna:'', periodicidad:'Mensual', fechaEmision: todayStr(), monto:''
+    prospectoId:'', cliente:'', plazoAnios:3, tna:'', periodicidad:'Mensual', fechaEmision: todayStr(), monto:''
   };
 }
 // Abre el formulario de "Agendar cita" para un prospecto. Si ya tiene una
@@ -515,8 +516,10 @@ function simularDesdeOportunidad(opId){
   if(!op) return;
   var montoBase = op.etapa==='emitida' ? op.monto : op.montoProbable;
   simuladorForm = defaultSimuladorForm();
+  simuladorForm.prospectoId = op.prospectoId || '';
   simuladorForm.cliente = (op.clienteNombres+' '+op.clienteApellidos).trim();
   if(montoBase!=null) simuladorForm.monto = String(montoBase);
+  simuladorSearch = '';
   view = 'simulador';
   render();
 }
@@ -3218,14 +3221,37 @@ function renderSimulador(){
   var f = simuladorForm;
   var res = calcularSimulacion(f);
   var errors = res.errors;
+  var prospectos = visibleProspectos();
+  var prospectoOptions = '<option value="">Sin prospecto (nombre libre abajo)</option>'+
+    prospectos.map(function(p){
+      return '<option value="'+p.id+'" data-search="'+escapeHtml(prospectoSearchKey(p))+'" '+(f.prospectoId===p.id?'selected':'')+'>'+
+        escapeHtml(p.clienteNombres)+' '+escapeHtml(p.clienteApellidos)+
+        (isAdmin() ? ' · '+escapeHtml(p.asesor) : '')+
+      '</option>';
+    }).join('');
   var clienteNote = f.cliente ? '<div class="datalist-note" style="margin-bottom:12px;">Simulando para: <b>'+escapeHtml(f.cliente)+'</b></div>' : '';
+  var printHeader = '<div class="print-header">'+
+    '<div style="display:flex;align-items:center;gap:14px;">'+
+      '<img src="'+LOGO_TREE+'" alt="El Olivar" style="height:46px;width:auto;flex-shrink:0;">'+
+      '<div>'+
+        '<h1 style="margin:0 0 2px;font-size:19px;">El Olivar Gestora de Fondos — Simulación de inversión</h1>'+
+        '<div style="font-size:13px;color:#444;">'+(f.cliente ? 'Cliente: '+escapeHtml(f.cliente) : 'Simulación genérica')+' · Producto: Bonos Corporativos</div>'+
+        '<div style="font-size:11px;color:#777;">Generado el '+fmtFecha(todayStr())+' por '+escapeHtml(currentUser.nombre)+'</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
 
   var formHtml =
     '<div class="report-card">'+
       '<h2>Simulador de inversión</h2>'+
       '<div class="sub" style="margin-bottom:12px;">Bono corporativo con amortización total al vencimiento (bullet): el capital se devuelve íntegro en la fecha de vencimiento, junto con el último pago de interés.</div>'+
-      clienteNote+
       '<form id="simulador-form">'+
+        '<div class="field no-print"><label for="sim-search">Buscar prospecto</label>'+
+          '<input type="text" id="sim-search" placeholder="Nombre, teléfono, correo o asesor…" value="'+escapeHtml(simuladorSearch)+'"></div>'+
+        '<div class="field no-print"><label for="sim-prospecto">Prospecto</label><select id="sim-prospecto">'+prospectoOptions+'</select></div>'+
+        (!f.prospectoId ? '<div class="field no-print"><label for="sim-cliente">Nombre del cliente (opcional, si no está en la lista)</label>'+
+          '<input id="sim-cliente" placeholder="Nombre y apellido" value="'+escapeHtml(f.cliente)+'"></div>' : '')+
+        clienteNote+
         '<div class="field"><label>Producto</label><input value="Bonos Corporativos" disabled></div>'+
         '<div class="grid2">'+
           '<div class="field"><label for="sim-plazo">Plazo</label><select id="sim-plazo">'+
@@ -3255,7 +3281,7 @@ function renderSimulador(){
   var resultHtml = '';
   if(Object.keys(errors).length === 0){
     var filas = res.cronograma.map(function(c){
-      return '<tr><td>'+c.n+'</td><td>'+fmtFecha(c.fecha)+'</td><td>'+fmtUSD(c.saldoInicial)+'</td><td>'+fmtUSD(c.interes)+'</td><td>'+fmtUSD(c.impuesto)+'</td><td>'+(c.amortizacion?fmtUSD(c.amortizacion):'—')+'</td><td>'+fmtUSD(c.saldoFinal)+'</td><td>'+fmtUSD(c.neto)+'</td></tr>';
+      return '<tr><td>'+c.n+'</td><td>'+fmtFecha(c.fecha)+'</td><td>'+fmtUSD(c.saldoInicial)+'</td><td>'+fmtUSD(c.interes)+'</td><td>'+fmtUSD(c.impuesto)+'</td><td>'+(c.amortizacion?fmtUSD(c.amortizacion):'—')+'</td><td>'+fmtUSD(c.neto)+'</td><td>'+fmtUSD(c.saldoFinal)+'</td></tr>';
     }).join('');
     resultHtml =
       '<div class="report-card">'+
@@ -3268,29 +3294,61 @@ function renderSimulador(){
           '<tr><td>Impuesto a la renta total (5%)</td><td>'+fmtUSD(res.impuestoTotal)+'</td></tr>'+
           '<tr><td>Interés neto total</td><td>'+fmtUSD(res.interesNetoTotal)+'</td></tr>'+
           '<tr><td>Monto total a recibir (capital + interés neto)</td><td><b>'+fmtUSD(res.montoTotal)+'</b></td></tr>'+
-          '<tr><td>Rentabilidad total neta del periodo</td><td><b>'+res.rentabilidadPct.toFixed(2)+'%</b></td></tr>'+
         '</table>'+
       '</div>'+
       '<div class="report-card">'+
         '<h2>Cronograma de pagos</h2>'+
         '<div class="scroll-x"><table class="cmp"><thead><tr>'+
-          '<th>N°</th><th>Fecha de pago</th><th>Saldo inicial</th><th>Interés</th><th>Impuesto a la renta (5%)</th><th>Amortización</th><th>Saldo final</th><th>Neto a pagar</th>'+
+          '<th>N°</th><th>Fecha de pago</th><th>Saldo inicial</th><th>Interés</th><th>Impuesto a la renta (5%)</th><th>Amortización</th><th>Neto a pagar</th><th>Saldo final</th>'+
         '</tr></thead><tbody>'+filas+'</tbody></table></div>'+
+        '<div class="submit-row no-print"><button class="btn" id="sim-export-pdf">Generar PDF</button></div>'+
       '</div>';
   } else {
     resultHtml = '<div class="report-card"><div class="sub">Completa los datos del bono para ver el cronograma de pagos y la rentabilidad estimada.</div></div>';
   }
 
-  return formHtml + resultHtml;
+  return printHeader + formHtml + resultHtml;
 }
 function wireSimuladorEvents(){
   var form = document.getElementById('simulador-form');
   if(!form) return;
+  var simSearch = document.getElementById('sim-search');
+  if(simSearch) simSearch.oninput = function(e){ simuladorSearch = e.target.value; applySimSearchFilter(); };
+  applySimSearchFilter();
+  document.getElementById('sim-prospecto').onchange = function(e){
+    simuladorForm.prospectoId = e.target.value;
+    var p = simuladorForm.prospectoId ? findProspectoById(simuladorForm.prospectoId) : null;
+    simuladorForm.cliente = p ? (p.clienteNombres+' '+p.clienteApellidos).trim() : '';
+    render();
+  };
+  var simCliente = document.getElementById('sim-cliente');
+  if(simCliente) simCliente.oninput = function(e){ simuladorForm.cliente = e.target.value; };
   document.getElementById('sim-plazo').onchange = function(e){ simuladorForm.plazoAnios = e.target.value; render(); };
   document.getElementById('sim-tna').onchange = function(e){ simuladorForm.tna = e.target.value; render(); };
   document.getElementById('sim-periodicidad').onchange = function(e){ simuladorForm.periodicidad = e.target.value; render(); };
   document.getElementById('sim-fecha').onchange = function(e){ simuladorForm.fechaEmision = e.target.value; render(); };
   document.getElementById('sim-monto').onchange = function(e){ simuladorForm.monto = e.target.value; render(); };
+
+  var simExportPdf = document.getElementById('sim-export-pdf');
+  if(simExportPdf) simExportPdf.onclick = function(){
+    var quien = simuladorForm.cliente ? simuladorForm.cliente : 'GENERAL';
+    var originalTitle = document.title;
+    var restored = false;
+    var restore = function(){ if(restored) return; restored = true; document.title = originalTitle; };
+    document.title = 'SIMULACION INVERSION ' + quien.toUpperCase() + ' - ' + todayStr();
+    window.onafterprint = function(){ restore(); window.onafterprint = null; };
+    window.print();
+    setTimeout(restore, 2000);
+  };
+}
+function applySimSearchFilter(){
+  var q = normHeader(simuladorSearch);
+  var sel = document.getElementById('sim-prospecto');
+  if(!sel) return;
+  sel.querySelectorAll('option[data-search]').forEach(function(opt){
+    var match = !q || opt.dataset.search.indexOf(q) !== -1;
+    opt.style.display = match ? '' : 'none';
+  });
 }
 
 // ================= RENDER: Importar (admin) =================
