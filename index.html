@@ -1134,6 +1134,15 @@ function fmtUSD(n){
   if(n==null || isNaN(n)) return '—';
   return '$ ' + Number(n).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:2});
 }
+// Igual que fmtUSD pero SIEMPRE con 2 decimales (nunca los recorta aunque
+// sean ".00" o ".50") -- fmtUSD normal los recorta (ej. "$142.5" en vez de
+// "$142.50", o "$3,600" en vez de "$3,600.00"), lo cual en montos redondeados
+// de negocio no importa, pero en un cronograma financiero de interés/IR se
+// ve como un dato inconsistente o mal calculado. Se usa solo en el Simulador.
+function fmtUSD2(n){
+  if(n==null || isNaN(n)) return '—';
+  return '$ ' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
 
 // ---------- simulador de inversión (bonos corporativos) ----------
 // Bono a tasa nominal anual (TNA) con amortización única al vencimiento
@@ -1188,6 +1197,16 @@ function calcularSimulacion(form){
   var interesTotal = interesPorPeriodo * totalPagos;
   var impuestoTotal = impuestoPorPeriodo * totalPagos;
   var interesNetoTotal = interesTotal - impuestoTotal;
+  // OJO: el pago de redención (lo que el cliente recibe en la fecha de
+  // vencimiento) es el capital MÁS el interés neto de ESE ÚNICO periodo --
+  // no el capital más la suma de todos los intereses netos del bono, porque
+  // los demás periodos ya se pagaron aparte (así lo muestra cada fila del
+  // cronograma). Es exactamente el "neto" de la última fila.
+  var pagoFinal = cronograma[cronograma.length-1].neto;
+  // "montoTotal" (capital + interés neto de TODOS los periodos sumados) es un
+  // total de referencia -- cuánto recibe el cliente en total durante toda la
+  // vida del bono, sumando los pagos periódicos y la redención -- distinto
+  // del pago de redención en sí.
   var montoTotal = monto + interesNetoTotal;
   var rentabilidadPct = monto>0 ? (interesNetoTotal/monto*100) : 0;
   return {
@@ -1200,6 +1219,7 @@ function calcularSimulacion(form){
     interesTotal: interesTotal,
     impuestoTotal: impuestoTotal,
     interesNetoTotal: interesNetoTotal,
+    pagoFinal: pagoFinal,
     montoTotal: montoTotal,
     rentabilidadPct: rentabilidadPct
   };
@@ -3327,7 +3347,7 @@ function renderSimulador(){
   if(Object.keys(errors).length === 0){
     var filas = res.cronograma.map(function(c){
       return '<tr'+(c.n===res.totalPagos?' class="final-row"':'')+'>'+
-        '<td>'+c.n+'</td><td>'+fmtFecha(c.fecha)+'</td><td>'+fmtUSD(c.saldoInicial)+'</td><td>'+fmtUSD(c.interes)+'</td><td>'+fmtUSD(c.impuesto)+'</td><td>'+(c.amortizacion?fmtUSD(c.amortizacion):'—')+'</td><td>'+fmtUSD(c.neto)+'</td><td>'+fmtUSD(c.saldoFinal)+'</td></tr>';
+        '<td>'+c.n+'</td><td>'+fmtFecha(c.fecha)+'</td><td>'+fmtUSD2(c.saldoInicial)+'</td><td>'+fmtUSD2(c.interes)+'</td><td>'+fmtUSD2(c.impuesto)+'</td><td>'+(c.amortizacion?fmtUSD2(c.amortizacion):'—')+'</td><td>'+fmtUSD2(c.neto)+'</td><td>'+fmtUSD2(c.saldoFinal)+'</td></tr>';
     }).join('');
     var tlPoints = simTimelinePoints(f, res);
     var tlHtml = tlPoints.map(function(p){
@@ -3348,7 +3368,7 @@ function renderSimulador(){
         '</div>'+
         '<div class="sim-pdf-section-title">Resumen</div>'+
         '<div class="sim-pdf-cards">'+
-          '<div class="sim-pdf-card"><div class="l">Monto invertido</div><div class="v">'+fmtUSD(parseFloat(f.monto))+'</div><div class="d">Capital inicial</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">Monto invertido</div><div class="v">'+fmtUSD2(parseFloat(f.monto))+'</div><div class="d">Capital inicial</div></div>'+
           '<div class="sim-pdf-card"><div class="l">TNA</div><div class="v accent">'+parseFloat(f.tna).toFixed(2)+'%</div><div class="d">Tasa nominal anual</div></div>'+
           '<div class="sim-pdf-card"><div class="l">Plazo</div><div class="v">'+f.plazoAnios+' años</div><div class="d">'+res.totalPagos+' pago(s) de interés</div></div>'+
           '<div class="sim-pdf-card"><div class="l">Frecuencia</div><div class="v">'+f.periodicidad+'</div><div class="d">Amortización al vencimiento</div></div>'+
@@ -3357,17 +3377,17 @@ function renderSimulador(){
         '<div class="sim-pdf-timeline">'+tlHtml+'</div>'+
         '<div class="sim-pdf-highlight">'+
           '<div class="sim-pdf-hi-box periodic"><div class="sim-pdf-hi-label">Pagos periódicos · interés neto</div>'+
-            '<div class="sim-pdf-hi-value">'+fmtUSD(res.interesPorPeriodo-res.impuestoPorPeriodo)+'</div>'+
-            '<div class="sim-pdf-hi-detail">Bruto '+fmtUSD(res.interesPorPeriodo)+' · IR (5%) '+fmtUSD(res.impuestoPorPeriodo)+'</div></div>'+
+            '<div class="sim-pdf-hi-value">'+fmtUSD2(res.interesPorPeriodo-res.impuestoPorPeriodo)+'</div>'+
+            '<div class="sim-pdf-hi-detail">Bruto '+fmtUSD2(res.interesPorPeriodo)+' · IR (5%) '+fmtUSD2(res.impuestoPorPeriodo)+'</div></div>'+
           '<div class="sim-pdf-hi-box final"><div class="sim-pdf-hi-label">Pago '+res.totalPagos+' · Redención</div>'+
-            '<div class="sim-pdf-hi-value">'+fmtUSD(res.montoTotal)+'</div>'+
+            '<div class="sim-pdf-hi-value">'+fmtUSD2(res.pagoFinal)+'</div>'+
             '<div class="sim-pdf-hi-detail">Capital + interés neto del último periodo</div></div>'+
         '</div>'+
         '<div class="sim-pdf-section-title">Cronograma de pagos</div>'+
         '<div class="scroll-x"><table class="sim-pdf-table"><thead><tr>'+
           '<th>N°</th><th>Fecha de pago</th><th>Saldo inicial</th><th>Interés</th><th>Impuesto a la renta (5%)</th><th>Amortización</th><th>Neto a pagar</th><th>Saldo final</th>'+
         '</tr></thead><tbody>'+filas+'</tbody></table></div>'+
-        '<div class="sim-pdf-footer">Pago '+res.totalPagos+' = redención del 100% del capital + interés neto del último periodo · Interés bruto total '+fmtUSD(res.interesTotal)+' · Impuesto a la renta total (5%) '+fmtUSD(res.impuestoTotal)+'</div>'+
+        '<div class="sim-pdf-footer">Pago '+res.totalPagos+' = redención del 100% del capital + interés neto del último periodo · Interés bruto total '+fmtUSD2(res.interesTotal)+' · Impuesto a la renta total (5%) '+fmtUSD2(res.impuestoTotal)+'</div>'+
         '<div class="submit-row no-print" style="margin-top:14px;"><button class="btn" id="sim-export-pdf">Generar PDF</button></div>'+
       '</div>';
   } else {
