@@ -298,7 +298,7 @@
      referencial cuando el producto es Fondo de Inversión (se calcula sobre
      los ingresos afectos del fondo, no sobre el rendimiento del
      inversionista) -- solo se muestra para ese producto. */
-  .sim-pdf-ir-nota{ font-size:9px; color:var(--ink-soft); font-style:italic; margin:4px 0 10px; }
+  .sim-pdf-ir-nota{ font-size:9px; color:var(--ink-soft); font-style:italic; margin:4px 0 10px; line-height:1.5; }
   .sim-pdf-card{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:9px 12px; break-inside:avoid; text-align:center; }
   .sim-pdf-card .l{ font-size:10px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; margin-bottom:4px; }
   .sim-pdf-card .v{ font-size:17px; font-weight:700; color:var(--navy); font-family:'JetBrains Mono','SFMono-Regular',Consolas,Menlo,monospace; }
@@ -1181,8 +1181,8 @@ function simuladorValidar(form){
   var errors = {};
   var tna = parseFloat(form.tna);
   var monto = parseFloat(form.monto);
-  if(!form.fechaEmision) errors.fechaEmision = 'Ingresa la fecha de emisión.';
-  if(form.tna==='' || isNaN(tna) || tna<=0) errors.tna = 'Ingresa una TNA válida (mayor a 0).';
+  if(!form.fechaEmision) errors.fechaEmision = form.producto==='Fondo de Inversión' ? 'Ingresa la fecha de suscripción.' : 'Ingresa la fecha de emisión.';
+  if(form.tna==='' || isNaN(tna) || tna<=0) errors.tna = 'Ingresa una '+(form.producto==='Fondo de Inversión'?'TEA':'TNA')+' válida (mayor a 0).';
   if(form.monto==='' || isNaN(monto) || monto<=0) errors.monto = 'Ingresa un monto a invertir válido (mayor a 0).';
   if(!SIMULADOR_PERIODOS_POR_ANIO[form.periodicidad]) errors.periodicidad = 'Periodicidad inválida.';
   if([2,3,4].indexOf(parseInt(form.plazoAnios,10))===-1) errors.plazoAnios = 'Plazo inválido.';
@@ -3310,7 +3310,7 @@ function applyAgendarSearchFilter(){
 // plazo es largo (hasta 48 pagos en un bono mensual a 4 años).
 function simTimelinePoints(f, res){
   var n = res.totalPagos;
-  var points = [{label:'Emisión', fecha:f.fechaEmision, final:false}];
+  var points = [{label:(f.producto==='Fondo de Inversión'?'Suscripción':'Emisión'), fecha:f.fechaEmision, final:false}];
   points.push({label:'Pago 1', fecha:res.cronograma[0].fecha, final:false});
   var mid = Math.round(n/2);
   if(mid>1 && mid<n) points.push({label:'Pago '+mid, fecha:res.cronograma[mid-1].fecha, final:false});
@@ -3321,10 +3321,13 @@ function renderSimulador(){
   var f = simuladorForm;
   var res = calcularSimulacion(f);
   var errors = res.errors;
-  // El Bono Corporativo usa TNA (tasa nominal anual) y "amortización"; el
-  // Fondo de Inversión usa TEA (tasa efectiva anual) y "retiro de capital" --
-  // mismo cálculo (calcularSimulacion no cambia), solo cambia cómo se
-  // nombran la tasa y el retiro del capital en pantalla y en el PDF.
+  // El Bono Corporativo usa TNA (tasa nominal anual), "amortización",
+  // "interés" y "fecha de emisión"; el Fondo de Inversión usa TEA (tasa
+  // efectiva anual), "retiro de capital", "dividendos" y "fecha de
+  // suscripción" -- mismo cálculo (calcularSimulacion no cambia), solo
+  // cambia cómo se nombran estos conceptos en pantalla y en el PDF. Lo que
+  // adquiere el inversionista en un fondo son cuotas de participación (no
+  // "bonos"), por eso también se aclara en la tarjeta de monto invertido.
   var esFondo = f.producto === 'Fondo de Inversión';
   var tasaSigla = esFondo ? 'TEA' : 'TNA';
   var tasaLabelForm = esFondo ? 'Tasa Efectiva Anual (TEA %)' : 'Tasa Nominal Anual (TNA %)';
@@ -3333,13 +3336,24 @@ function renderSimulador(){
   var amortDetailFrecuencia = esFondo ? 'Retiro de capital al vencimiento' : 'Amortización al vencimiento';
   var amortColTabla = esFondo ? 'Retiro de capital' : 'Amortización';
   var productoSub = esFondo ? 'Fondo de Inversión' : 'Bonos Corporativos';
+  var interesLabel = esFondo ? 'Dividendos' : 'Interés';
+  var interesLabelMin = esFondo ? 'dividendos' : 'interés';
+  var interesNetoLabel = esFondo ? 'dividendo neto' : 'interés neto';
+  var interesBrutoCardLabel = esFondo ? 'Dividendo bruto total' : 'Interés bruto total';
+  var fechaEmisionLabel = esFondo ? 'Fecha de Suscripción' : 'Fecha de Emisión';
+  var montoInvertidoDetail = esFondo ? 'Aporte inicial · cuotas de participación' : 'Capital inicial';
+  // El fondo es de renta variable: a diferencia del bono (tasa pactada), la
+  // TEA que se ingresa aquí para un fondo es una tasa ESPERADA/estimada para
+  // fines de la simulación, no un rendimiento garantizado -- se aclara con
+  // nota (*) junto a la tarjeta de TEA.
+  var tasaNota = esFondo ? '* Fondo de renta variable: la TEA usada es una tasa esperada (estimada) para esta simulación, no garantizada — los dividendos reales dependerán del desempeño del fondo.' : '';
   // El 5% de IR que calcula el simulador es una referencia, no un dato exacto
   // del inversionista: en un fondo, el impuesto se determina sobre los
   // ingresos afectos del fondo (a nivel de vehículo), no sobre el
   // rendimiento particular de cada partícipe -- por eso se marca como
   // referencial solo para Fondo de Inversión (en un bono nominativo sí es
-  // una retención directa sobre el interés del inversionista).
-  var irNota = esFondo ? '* El IR (5%) es referencial: se aplica en base a los ingresos afectos del fondo, no al rendimiento específico del inversionista.' : '';
+  // una retención directa sobre el interés del inversionista), con nota (**).
+  var irNota = esFondo ? '** El IR (5%) es referencial: se aplica en base a los ingresos afectos del fondo, no al rendimiento específico del inversionista.' : '';
   var prospectos = visibleProspectos();
   var prospectoOptions = '<option value="">Sin prospecto (nombre libre abajo)</option>'+
     prospectos.map(function(p){
@@ -3351,7 +3365,7 @@ function renderSimulador(){
   var clienteNote = f.cliente ? '<div class="datalist-note" style="margin-bottom:12px;">Simulando para: <b>'+escapeHtml(f.cliente)+'</b></div>' : '';
 
   var introTexto = esFondo ?
-    'Fondo de inversión con retiro de capital total al vencimiento: el capital se devuelve íntegro en la fecha de vencimiento, junto con el último pago de interés. Todos los datos ingresados aquí se resumen en la simulación de abajo, que es la que se imprime en PDF.' :
+    'Fondo de inversión de renta variable con retiro de capital total al vencimiento: el inversionista adquiere cuotas de participación por su aporte, y el capital se devuelve íntegro en la fecha de vencimiento junto con el último pago de dividendos. La TEA usada aquí es una tasa esperada para fines de la simulación, no garantizada. Todos los datos ingresados aquí se resumen en la simulación de abajo, que es la que se imprime en PDF.' :
     'Bono corporativo con amortización total al vencimiento (bullet): el capital se devuelve íntegro en la fecha de vencimiento, junto con el último pago de interés. Todos los datos ingresados aquí se resumen en la simulación de abajo, que es la que se imprime en PDF.';
   var formHtml =
     '<div class="report-card no-print">'+
@@ -3376,13 +3390,13 @@ function renderSimulador(){
             (errors.tna?'<div class="err">'+errors.tna+'</div>':'')+'</div>'+
         '</div>'+
         '<div class="grid2">'+
-          '<div class="field"><label for="sim-periodicidad">Periodicidad de pago de intereses</label><select id="sim-periodicidad">'+
+          '<div class="field"><label for="sim-periodicidad">Periodicidad de pago de '+interesLabelMin+'</label><select id="sim-periodicidad">'+
             ['Mensual','Trimestral','Semestral','Anual'].map(function(p){ return '<option value="'+p+'" '+(f.periodicidad===p?'selected':'')+'>'+p+'</option>'; }).join('')+
           '</select>'+(errors.periodicidad?'<div class="err">'+errors.periodicidad+'</div>':'')+'</div>'+
           '<div class="field"><label>'+amortLabel+'</label><input value="Al Vencimiento" disabled></div>'+
         '</div>'+
         '<div class="grid2">'+
-          '<div class="field"><label for="sim-fecha">Fecha de Emisión</label><input type="date" id="sim-fecha" value="'+f.fechaEmision+'">'+
+          '<div class="field"><label for="sim-fecha">'+fechaEmisionLabel+'</label><input type="date" id="sim-fecha" value="'+f.fechaEmision+'">'+
             (errors.fechaEmision?'<div class="err">'+errors.fechaEmision+'</div>':'')+'</div>'+
           '<div class="field"><label>Fecha de Vencimiento</label><input value="'+(res.fechaVencimiento?fmtFecha(res.fechaVencimiento):'—')+'" disabled></div>'+
         '</div>'+
@@ -3423,33 +3437,33 @@ function renderSimulador(){
         '</div>'+
         '<div class="sim-pdf-section-title">Resumen</div>'+
         '<div class="sim-pdf-cards">'+
-          '<div class="sim-pdf-card"><div class="l">Monto invertido</div><div class="v">'+fmtUSD2(parseFloat(f.monto))+'</div><div class="d">Capital inicial</div></div>'+
-          '<div class="sim-pdf-card"><div class="l">Plazo</div><div class="v">'+f.plazoAnios+' años</div><div class="d">'+res.totalPagos+' pago(s) de interés</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">Monto invertido</div><div class="v">'+fmtUSD2(parseFloat(f.monto))+'</div><div class="d">'+montoInvertidoDetail+'</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">Plazo</div><div class="v">'+f.plazoAnios+' años</div><div class="d">'+res.totalPagos+' pago(s) de '+interesLabelMin+'</div></div>'+
           '<div class="sim-pdf-card"><div class="l">Frecuencia</div><div class="v">'+f.periodicidad+'</div><div class="d">'+amortDetailFrecuencia+'</div></div>'+
-          '<div class="sim-pdf-card"><div class="l">'+tasaSigla+'</div><div class="v accent">'+parseFloat(f.tna).toFixed(2)+'%</div><div class="d">'+tasaDetail+'</div></div>'+
-          '<div class="sim-pdf-card"><div class="l">IR total (5%)'+(esFondo?'*':'')+'</div><div class="v">'+fmtUSD2(res.impuestoTotal)+'</div><div class="d">Impuesto a la renta retenido en total</div></div>'+
-          '<div class="sim-pdf-card"><div class="l">Interés bruto total</div><div class="v accent">'+fmtUSD2(res.interesTotal)+'</div><div class="d">Suma de los '+res.totalPagos+' pago(s), antes de impuesto</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">'+tasaSigla+(esFondo?'*':'')+'</div><div class="v accent">'+parseFloat(f.tna).toFixed(2)+'%</div><div class="d">'+tasaDetail+'</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">IR total (5%)'+(esFondo?'**':'')+'</div><div class="v">'+fmtUSD2(res.impuestoTotal)+'</div><div class="d">Impuesto a la renta retenido en total</div></div>'+
+          '<div class="sim-pdf-card"><div class="l">'+interesBrutoCardLabel+'</div><div class="v accent">'+fmtUSD2(res.interesTotal)+'</div><div class="d">Suma de los '+res.totalPagos+' pago(s), antes de impuesto</div></div>'+
         '</div>'+
-        (esFondo ? '<div class="sim-pdf-ir-nota">'+irNota+'</div>' : '')+
+        (esFondo ? '<div class="sim-pdf-ir-nota">'+tasaNota+'<br>'+irNota+'</div>' : '')+
         '<div class="sim-pdf-section-title">Flujo de pagos</div>'+
         '<div class="sim-pdf-timeline">'+tlHtml+'</div>'+
         '<div class="sim-pdf-highlight">'+
-          '<div class="sim-pdf-hi-box periodic"><div class="sim-pdf-hi-label">Pagos periódicos · interés neto</div>'+
+          '<div class="sim-pdf-hi-box periodic"><div class="sim-pdf-hi-label">Pagos periódicos · '+interesNetoLabel+'</div>'+
             '<div class="sim-pdf-hi-value">'+fmtUSD2(res.interesPorPeriodo-res.impuestoPorPeriodo)+'</div>'+
-            '<div class="sim-pdf-hi-detail">Bruto '+fmtUSD2(res.interesPorPeriodo)+' · IR (5%)'+(esFondo?'*':'')+' '+fmtUSD2(res.impuestoPorPeriodo)+'</div></div>'+
+            '<div class="sim-pdf-hi-detail">Bruto '+fmtUSD2(res.interesPorPeriodo)+' · IR (5%)'+(esFondo?'**':'')+' '+fmtUSD2(res.impuestoPorPeriodo)+'</div></div>'+
           '<div class="sim-pdf-hi-box final"><div class="sim-pdf-hi-label">Pago '+res.totalPagos+' · Redención</div>'+
             '<div class="sim-pdf-hi-value">'+fmtUSD2(res.pagoFinal)+'</div>'+
-            '<div class="sim-pdf-hi-detail">Capital + interés neto del último periodo</div></div>'+
+            '<div class="sim-pdf-hi-detail">Capital + '+interesNetoLabel+' del último periodo</div></div>'+
         '</div>'+
         '<div class="sim-pdf-section-title">Cronograma de pagos</div>'+
         '<div class="scroll-x"><table class="sim-pdf-table"><thead><tr>'+
-          '<th>N°</th><th>Fecha de pago</th><th>Saldo inicial</th><th>Interés</th><th>Impuesto a la renta (5%)'+(esFondo?'*':'')+'</th><th>'+amortColTabla+'</th><th>Neto a pagar</th><th>Saldo final</th>'+
+          '<th>N°</th><th>Fecha de pago</th><th>Saldo inicial</th><th>'+interesLabel+'</th><th>Impuesto a la renta (5%)'+(esFondo?'**':'')+'</th><th>'+amortColTabla+'</th><th>Neto a pagar</th><th>Saldo final</th>'+
         '</tr></thead><tbody>'+filas+'</tbody></table></div>'+
-        '<div class="sim-pdf-footer">Pago '+res.totalPagos+' = redención del 100% del capital + interés neto del último periodo</div>'+
+        '<div class="sim-pdf-footer">Pago '+res.totalPagos+' = redención del 100% del capital + '+interesNetoLabel+' del último periodo</div>'+
         '<div class="submit-row no-print" style="margin-top:14px;"><button class="btn" id="sim-export-pdf">Generar PDF</button></div>'+
       '</div>';
   } else {
-    resultHtml = '<div class="report-card"><div class="sub">Completa los datos del bono para ver el cronograma de pagos y la rentabilidad estimada.</div></div>';
+    resultHtml = '<div class="report-card"><div class="sub">Completa los datos de la inversión para ver el cronograma de pagos y la rentabilidad estimada.</div></div>';
   }
 
   return formHtml + resultHtml;
