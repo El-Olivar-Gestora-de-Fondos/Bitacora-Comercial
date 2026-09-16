@@ -1182,7 +1182,7 @@ function simuladorValidar(form){
   var tna = parseFloat(form.tna);
   var monto = parseFloat(form.monto);
   if(!form.fechaEmision) errors.fechaEmision = form.producto==='Fondo de Inversión' ? 'Ingresa la fecha de suscripción.' : 'Ingresa la fecha de emisión.';
-  if(form.tna==='' || isNaN(tna) || tna<=0) errors.tna = 'Ingresa una '+(form.producto==='Fondo de Inversión'?'TEA':'TNA')+' válida (mayor a 0).';
+  if(form.tna==='' || isNaN(tna) || tna<=0) errors.tna = 'Ingresa una TNA válida (mayor a 0).';
   if(form.monto==='' || isNaN(monto) || monto<=0) errors.monto = 'Ingresa un monto a invertir válido (mayor a 0).';
   if(!SIMULADOR_PERIODOS_POR_ANIO[form.periodicidad]) errors.periodicidad = 'Periodicidad inválida.';
   if([2,3,4].indexOf(parseInt(form.plazoAnios,10))===-1) errors.plazoAnios = 'Plazo inválido.';
@@ -3322,16 +3322,21 @@ function renderSimulador(){
   var res = calcularSimulacion(f);
   var errors = res.errors;
   // El Bono Corporativo usa TNA (tasa nominal anual), "amortización",
-  // "interés" y "fecha de emisión"; el Fondo de Inversión usa TEA (tasa
-  // efectiva anual), "retiro de capital", "dividendos" y "fecha de
-  // suscripción" -- mismo cálculo (calcularSimulacion no cambia), solo
-  // cambia cómo se nombran estos conceptos en pantalla y en el PDF. Lo que
-  // adquiere el inversionista en un fondo son cuotas de participación (no
-  // "bonos"), por eso también se aclara en la tarjeta de monto invertido.
+  // "interés" y "fecha de emisión"; el Fondo de Inversión usa "retiro de
+  // capital", "dividendos" y "fecha de suscripción" -- mismo cálculo
+  // (calcularSimulacion no cambia), solo cambia cómo se nombran estos
+  // conceptos en pantalla y en el PDF. Lo que adquiere el inversionista en
+  // un fondo son cuotas de participación (no "bonos"), por eso también se
+  // aclara en la tarjeta de monto invertido.
   var esFondo = f.producto === 'Fondo de Inversión';
-  var tasaSigla = esFondo ? 'TEA' : 'TNA';
-  var tasaLabelForm = esFondo ? 'Tasa Efectiva Anual (TEA %)' : 'Tasa Nominal Anual (TNA %)';
-  var tasaDetail = esFondo ? 'Tasa efectiva anual' : 'Tasa nominal anual';
+  // El insumo de la simulación sigue siendo TNA para AMBOS productos (así es
+  // como se calcula el pago periódico: tasa entre periodos del año, sin
+  // capitalización compuesta) -- para el fondo no se pide/etiqueta como TEA,
+  // pero se aclara con nota (*) que el rendimiento real depende del
+  // desempeño del fondo (renta variable) y se expresará en TEA.
+  var tasaSigla = 'TNA';
+  var tasaLabelForm = 'Tasa Nominal Anual (TNA %)';
+  var tasaDetail = 'Tasa nominal anual';
   var amortLabel = esFondo ? 'Retiro de Capital' : 'Amortización';
   var amortDetailFrecuencia = esFondo ? 'Retiro de capital al vencimiento' : 'Amortización al vencimiento';
   var amortColTabla = esFondo ? 'Retiro de capital' : 'Amortización';
@@ -3342,11 +3347,7 @@ function renderSimulador(){
   var interesBrutoCardLabel = esFondo ? 'Dividendo bruto total' : 'Interés bruto total';
   var fechaEmisionLabel = esFondo ? 'Fecha de Suscripción' : 'Fecha de Emisión';
   var montoInvertidoDetail = esFondo ? 'Aporte inicial · cuotas de participación' : 'Capital inicial';
-  // El fondo es de renta variable: a diferencia del bono (tasa pactada), la
-  // TEA que se ingresa aquí para un fondo es una tasa ESPERADA/estimada para
-  // fines de la simulación, no un rendimiento garantizado -- se aclara con
-  // nota (*) junto a la tarjeta de TEA.
-  var tasaNota = esFondo ? '* Fondo de renta variable: la TEA usada es una tasa esperada (estimada) para esta simulación, no garantizada — los dividendos reales dependerán del desempeño del fondo.' : '';
+  var tasaNota = esFondo ? '* TNA referencial usada para esta simulación (el pago periódico se calcula dividiendo la tasa entre los periodos del año, sin capitalización compuesta). El fondo es de renta variable: el rendimiento real dependerá de su desempeño y se expresará en TEA (Tasa Efectiva Anual).' : '';
   // El 5% de IR que calcula el simulador es una referencia, no un dato exacto
   // del inversionista: en un fondo, el impuesto se determina sobre los
   // ingresos afectos del fondo (a nivel de vehículo), no sobre el
@@ -3365,7 +3366,7 @@ function renderSimulador(){
   var clienteNote = f.cliente ? '<div class="datalist-note" style="margin-bottom:12px;">Simulando para: <b>'+escapeHtml(f.cliente)+'</b></div>' : '';
 
   var introTexto = esFondo ?
-    'Fondo de inversión de renta variable con retiro de capital total al vencimiento: el inversionista adquiere cuotas de participación por su aporte, y el capital se devuelve íntegro en la fecha de vencimiento junto con el último pago de dividendos. La TEA usada aquí es una tasa esperada para fines de la simulación, no garantizada. Todos los datos ingresados aquí se resumen en la simulación de abajo, que es la que se imprime en PDF.' :
+    'Fondo de inversión de renta variable con retiro de capital total al vencimiento: el inversionista adquiere cuotas de participación por su aporte, y el capital se devuelve íntegro en la fecha de vencimiento junto con el último pago de dividendos. La TNA ingresada aquí es referencial para la simulación; el rendimiento real dependerá del desempeño del fondo y se expresará en TEA. Todos los datos ingresados aquí se resumen en la simulación de abajo, que es la que se imprime en PDF.' :
     'Bono corporativo con amortización total al vencimiento (bullet): el capital se devuelve íntegro en la fecha de vencimiento, junto con el último pago de interés. Todos los datos ingresados aquí se resumen en la simulación de abajo, que es la que se imprime en PDF.';
   var formHtml =
     '<div class="report-card no-print">'+
